@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * 手动轮换 Caddy 门禁 token（MAINT_* / OP_*），可选写回 EnvironmentFile。
+ * OP 与 MAINT 的 *_GATE_TOKEN 须为**不同随机值**，勿复用同一段字符串。
  * 用法:
  *   node scripts/rotate-gate-tokens.mjs [--dry-run] [--write] [--maint-only] [--op-only]
  * 环境变量 CADDY_ENV_FILE=/etc/caddy/caddy.env
@@ -150,6 +150,34 @@ function main() {
       newPrimary: neu,
       oldSlot: updates.OP_GATE_TOKEN_OLD,
     });
+  }
+
+  /** OP_GATE_TOKEN 与 MAINT_GATE_TOKEN 必须不同（独立书签、降低单点泄露影响面）。 */
+  const peerMaint = (doMaint ? updates.MAINT_GATE_TOKEN : existing.MAINT_GATE_TOKEN) || "";
+  const peerOp = (doOp ? updates.OP_GATE_TOKEN : existing.OP_GATE_TOKEN) || "";
+  if (peerMaint && peerOp && peerMaint === peerOp) {
+    console.warn(
+      "[warn] OP_GATE_TOKEN 与 MAINT_GATE_TOKEN 当前相同，正在重新生成其一以满足「必须不同」约束。",
+    );
+    if (doMaint && doOp) {
+      do {
+        updates.OP_GATE_TOKEN = randomToken();
+      } while (updates.OP_GATE_TOKEN === updates.MAINT_GATE_TOKEN);
+      const opM = meta.find((x) => x.label === "OP");
+      if (opM) opM.newPrimary = updates.OP_GATE_TOKEN;
+    } else if (doMaint) {
+      do {
+        updates.MAINT_GATE_TOKEN = randomToken();
+      } while (updates.MAINT_GATE_TOKEN === peerOp);
+      const mM = meta.find((x) => x.label === "MAINT");
+      if (mM) mM.newPrimary = updates.MAINT_GATE_TOKEN;
+    } else {
+      do {
+        updates.OP_GATE_TOKEN = randomToken();
+      } while (updates.OP_GATE_TOKEN === peerMaint);
+      const om = meta.find((x) => x.label === "OP");
+      if (om) om.newPrimary = updates.OP_GATE_TOKEN;
+    }
   }
 
   console.log(JSON.stringify({ dryRun, write, filePath, meta }, null, 2));

@@ -99,6 +99,7 @@ HTTP 访问量仍以 **Caddy JSON 访问日志**为主；本脚本侧重**容器
 
 与 [`templates/Caddyfile.split-domains.example`](../deploy/templates/Caddyfile.split-domains.example) 一致：
 
+- **`OP_GATE_TOKEN`** 与 **`MAINT_GATE_TOKEN` 必须为两串不同的随机值**（后台 `op` 与运维 `maint` 独立书签、勿复用同一 token）。
 - `MAINT_STATIC_ROOT`：静态根目录（与 `REPORT_DIR` 一致）
 - `MAINT_GATE_TOKEN` / `MAINT_GATE_TOKEN_OLD`
 - `OP_GATE_TOKEN` / `OP_GATE_TOKEN_OLD`
