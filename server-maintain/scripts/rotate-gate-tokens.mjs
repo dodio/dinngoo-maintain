@@ -7,9 +7,10 @@
  * 见 deploy/SERVER-MAINTAIN-部署.md
  * 环境变量 **CADDY_ENV_FILE**（建议 **`/etc/caddy/env.deploy`**，与 systemd 的 EnvironmentFile 一致；
  * 未设置时若该文件存在则自动使用）。也可用 **`--env-file /path`** 覆盖。
- * --write 前会自动拷贝 Caddy EnvironmentFile 与 Caddyfile 到**宿主机备份目录**（见下方
+ * --write 时写入新 token；不再写入 *_GATE_TOKEN_OLD，并从 env 中删除旧键，轮换后立即失效。
+ * --write 前会自动拷贝 Caddy EnvironmentFile 与 Caddyfile 到**宿主机备份目录**（见
  * CADDY_ROTATE_BACKUP_DIR / BACKUP_DIR），与数据库全量备份同级侧存放、不写入 Git 仓库。
- * 可选 CADDYFILE_PATH 覆盖默认的 /etc/caddy/Caddyfile（不存在则跳过备份）。
+ * 可选 **CADDYFILE_PATH** 覆盖默认的 `/etc/caddy/Caddyfile`（不存在则跳过备份）。
  */
 
 import {
@@ -107,6 +108,22 @@ function patchEnvLines(content, updates) {
   return out.join("\n");
 }
 
+/** 从 env 文件中移除已废弃的 *_GATE_TOKEN_OLD 行（与 Caddy 模板「仅认当前 token」一致）。 */
+function stripDeprecatedGateOldKeys(content) {
+  const dropFields = new Set(["OP_GATE_TOKEN_OLD", "MAINT_GATE_TOKEN_OLD"]);
+  return content
+    .split("\n")
+    .filter((line) => {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith("#")) return true;
+      const eq = trimmed.indexOf("=");
+      if (eq <= 0) return true;
+      const key = trimmed.slice(0, eq).trim();
+      return !dropFields.has(key);
+    })
+    .join("\n");
+}
+
 function readEnvMap(path) {
   if (!path || !existsSync(path)) return {};
   const raw = readFileSync(path, "utf8");
@@ -170,30 +187,22 @@ function main() {
   if (doMaint) {
     const cur = existing.MAINT_GATE_TOKEN || "";
     const neu = randomToken();
-    updates.MAINT_GATE_TOKEN_OLD = cur
-      ? cur
-      : existing.MAINT_GATE_TOKEN_OLD || "";
     updates.MAINT_GATE_TOKEN = neu;
     meta.push({
       label: "MAINT",
       previous: cur || "(空)",
       newPrimary: neu,
-      oldSlot: updates.MAINT_GATE_TOKEN_OLD,
     });
   }
 
   if (doOp) {
     const cur = existing.OP_GATE_TOKEN || "";
     const neu = randomToken();
-    updates.OP_GATE_TOKEN_OLD = cur
-      ? cur
-      : existing.OP_GATE_TOKEN_OLD || "";
     updates.OP_GATE_TOKEN = neu;
     meta.push({
       label: "OP",
       previous: cur || "(空)",
       newPrimary: neu,
-      oldSlot: updates.OP_GATE_TOKEN_OLD,
     });
   }
 
@@ -241,7 +250,6 @@ function main() {
     );
     for (const m of meta) {
       console.log(`\n${m.label}_GATE_TOKEN=${m.newPrimary}`);
-      if (m.oldSlot) console.log(`${m.label}_GATE_TOKEN_OLD=${m.oldSlot}`);
     }
     console.log(
       "\n轮换后请: sudo dinngoo-caddy-apply，并通知运营更新书签。",
@@ -260,7 +268,7 @@ function main() {
 
   const before = readFileSync(filePath, "utf8");
   backupCaddyArtifacts(filePath);
-  const after = patchEnvLines(before, updates);
+  const after = stripDeprecatedGateOldKeys(patchEnvLines(before, updates));
   writeFileSync(filePath, after, "utf8");
   console.log("已更新", filePath);
   console.log("请执行: sudo dinngoo-caddy-apply");

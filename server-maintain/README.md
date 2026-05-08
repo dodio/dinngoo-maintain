@@ -120,8 +120,8 @@ sudo bash deploy/install-dinngoo-maintain-cron.sh
 
 - **`OP_GATE_TOKEN`** 与 **`MAINT_GATE_TOKEN` 必须为两串不同的随机值**（后台 `op` 与运维 `maint` 独立书签、勿复用同一 token）。
 - `MAINT_STATIC_ROOT`：静态根目录（与 `REPORT_DIR` 一致）
-- `MAINT_GATE_TOKEN` / `MAINT_GATE_TOKEN_OLD`
-- `OP_GATE_TOKEN` / `OP_GATE_TOKEN_OLD`
+- `MAINT_GATE_TOKEN`
+- `OP_GATE_TOKEN`
 
 ## 视觉
 
