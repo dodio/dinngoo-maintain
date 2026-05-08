@@ -3,7 +3,8 @@
 #
 #   <运维用户> ALL=(root) NOPASSWD: /usr/local/sbin/dinngoo-rotate-gate-tokens
 #   <运维用户> ALL=(root) NOPASSWD: /usr/local/sbin/dinngoo-fetch-caddy-gate-tokens
-#   <运维用户> ALL=(root) NOPASSWD: /usr/local/sbin/dinngoo-caddy-validate-reload
+#   <运维用户> ALL=(root) NOPASSWD: /usr/local/sbin/dinngoo-caddy-apply
 #
-# dinngoo-caddy-validate-reload：固定执行 caddy validate + systemctl reload caddy（不授予改写 /etc/caddy 的免密）。
+# dinngoo-caddy-apply：若 deploy/staging/Caddyfile 存在且非空则校验后安装到 /etc/caddy/Caddyfile 并 reload；
+# 否则仅校验当前 Caddyfile 并 reload（例如仅轮换过 env.deploy）。
 # 校验：sudo visudo -cf /etc/sudoers.d/dinngoo-server-maintain

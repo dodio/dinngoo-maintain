@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 # 零参数。目录约定：本仓库须在 /srv/dinngoo-room/dinngoo-maintain（见 deploy/SERVER-MAINTAIN-部署.md）。
+# 生成 dinngoo-caddy-apply：从 deploy/staging/Caddyfile（若存在且非空）安装到 /etc/caddy/Caddyfile 并 reload；
+# 无暂存文件时仅校验当前 Caddyfile 并 reload。
 # 须 sudo，且由「要免密的普通用户」发起，以便 SUDO_USER 正确。
 #
 #   cd /srv/dinngoo-room/dinngoo-maintain
@@ -72,8 +74,13 @@ fi
 
 ROT_WR=/usr/local/sbin/dinngoo-rotate-gate-tokens
 FET_WR=/usr/local/sbin/dinngoo-fetch-caddy-gate-tokens
-CAD_WR=/usr/local/sbin/dinngoo-caddy-validate-reload
+CAD_WR=/usr/local/sbin/dinngoo-caddy-apply
 SUDO_F=/etc/sudoers.d/dinngoo-server-maintain
+
+# 旧版仅 reload 的包装（若存在则删除，避免与 apply 并存混淆）
+rm -f /usr/local/sbin/dinngoo-caddy-validate-reload
+
+mkdir -p "$DEPLOY_DIR/staging"
 
 printf '%s\n' '#!/bin/sh' "exec $(printf '%q' "$NODE_CMD") $(printf '%q' "$MJS") \"\$@\"" >"$ROT_WR"
 chmod 755 "$ROT_WR"
@@ -81,12 +88,39 @@ chmod 755 "$ROT_WR"
 printf '%s\n' '#!/bin/sh' "exec /bin/bash $(printf '%q' "$FETCH") \"\$@\"" >"$FET_WR"
 chmod 755 "$FET_WR"
 
-# 仅 validate + reload，不授予任意修改 /etc/caddy 的免密（编辑仍须 sudo vim 等）。
-{
-	printf '%s\n' '#!/bin/sh' 'set -e' \
-		"$(printf '%q' "$CADDY_CMD") validate --config /etc/caddy/Caddyfile" \
-		'exec /bin/systemctl reload caddy'
-} >"$CAD_WR"
+# 从 deploy/staging/Caddyfile 安装并 reload；无暂存文件时仅 validate 当前 Caddyfile 后 reload（覆盖仅改 env.deploy 的场景）。
+cat >"$CAD_WR" <<EOF
+#!/bin/sh
+set -eu
+# 由 install-dinngoo-server-maintain-wrappers.sh 生成；勿手改
+STAGE="$REPO_ROOT/deploy/staging/Caddyfile"
+TARGET=/etc/caddy/Caddyfile
+CADDY="$CADDY_CMD"
+ENVF=/etc/caddy/env.deploy
+if [ -r "\$ENVF" ]; then
+	set -a
+	# shellcheck disable=SC1090
+	. "\$ENVF"
+	set +a
+fi
+if [ -f "\$STAGE" ] && [ -s "\$STAGE" ]; then
+	"\$CADDY" validate --config "\$STAGE" || exit 1
+	BK=\$(mktemp)
+	trap 'rm -f "\$BK"' EXIT
+	if [ -f "\$TARGET" ]; then cp -a "\$TARGET" "\$BK"; fi
+	install -m 644 "\$STAGE" "\$TARGET"
+	if ! "\$CADDY" validate --config "\$TARGET"; then
+		if [ -f "\$BK" ]; then install -m 644 "\$BK" "\$TARGET"; fi
+		exit 1
+	fi
+	rm -f "\$BK"
+	trap - EXIT
+else
+	[ -f "\$TARGET" ] || { echo "无 \$TARGET 且无非空 \$STAGE" >&2; exit 1; }
+	"\$CADDY" validate --config "\$TARGET" || exit 1
+fi
+exec /bin/systemctl reload caddy
+EOF
 chmod 755 "$CAD_WR"
 
 {
@@ -107,4 +141,5 @@ echo "  $ROT_WR"
 echo "  $FET_WR"
 echo "  $CAD_WR"
 echo "  $SUDO_F"
-echo "免密 sudo: dinngoo-rotate-gate-tokens、dinngoo-fetch-caddy-gate-tokens、dinngoo-caddy-validate-reload"
+echo "免密 sudo: dinngoo-rotate-gate-tokens、dinngoo-fetch-caddy-gate-tokens、dinngoo-caddy-apply"
+echo "Caddyfile 暂存: $DEPLOY_DIR/staging/Caddyfile（见 deploy/staging/README.md）"

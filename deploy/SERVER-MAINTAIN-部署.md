@@ -40,7 +40,7 @@ sudo bash deploy/install-dinngoo-server-maintain-wrappers.sh
 
 脚本会校验仓库根是否为 **`/srv/dinngoo-room/dinngoo-maintain`**。用 `SUDO_USER`（或该目录属主）定免密用户，并解析 `node`（login shell → nvm → `/usr/bin/node`）、**`caddy`**（须已安装，常见 `/usr/bin/caddy`）。
 
-生成：`/usr/local/sbin/dinngoo-rotate-gate-tokens`、`dinngoo-fetch-caddy-gate-tokens`、**`dinngoo-caddy-validate-reload`**（校验 Caddyfile 后 reload），以及 `/etc/sudoers.d/dinngoo-server-maintain`。
+生成：`/usr/local/sbin/dinngoo-rotate-gate-tokens`、`dinngoo-fetch-caddy-gate-tokens`、**`dinngoo-caddy-apply`**（从 **`deploy/staging/Caddyfile`** 安装系统 Caddyfile 并 reload；无暂存文件时仅校验当前配置并 reload），以及 `/etc/sudoers.d/dinngoo-server-maintain`。
 
 升级 nvm 后：同上命令再执行一次。
 
@@ -51,11 +51,11 @@ dinngoo-rotate-gate-tokens --write
 dinngoo-fetch-caddy-gate-tokens
 ```
 
-轮换或改过 **`/etc/caddy/Caddyfile`** 后（先自行 `sudo` 保存配置）：**`sudo dinngoo-caddy-validate-reload`**（免密，等价 validate + `systemctl reload caddy`）。其余见 `server-maintain/README.md`。
+**Caddy**：将待发布内容写入 **`deploy/staging/Caddyfile`**（普通用户可编辑，勿提交 Git），再 **`sudo dinngoo-caddy-apply`**（免密）。若仅改 **`/etc/caddy/env.deploy`**（如 token 轮换）而未动 Caddy 主配置：可不放暂存文件，直接 **`sudo dinngoo-caddy-apply`** 做校验并重载。详见 [`deploy/staging/README.md`](./staging/README.md)。
 
 ## 5. 自旧版路径/命令迁移（曾在 `/srv/dinggu-room` 或 `dinggu_*`）
 
 1. 将三仓放到 **`/srv/dinngoo-room/...`**（或对该路径做 **`ln -s`**）。
 2. Compose 共用网络改为 **`dinngoo_net`**（`docker network create dinngoo_net`；两栈 `docker-compose.prod.yml` 已按此命名）。旧容器需按窗口切换网络后重建或重连。
-3. 删除旧包装与 sudoers（若存在）：`/usr/local/sbin/dinggu-rotate-gate-tokens`、`dinggu-fetch-caddy-gate-tokens`、`/etc/sudoers.d/dinggu-server-maintain`（及本脚本早期若仅有二者、无 **`dinngoo-caddy-validate-reload`** 时，直接再跑一次安装脚本即可增补）。
+3. 删除旧包装与 sudoers（若存在）：`/usr/local/sbin/dinggu-rotate-gate-tokens`、`dinggu-fetch-caddy-gate-tokens`、`/etc/sudoers.d/dinggu-server-maintain`。曾安装过 **`dinngoo-caddy-validate-reload`** 的，再跑一次下方安装脚本会去掉旧包装、改为 **`dinngoo-caddy-apply`**。
 4. 在 **`/srv/dinngoo-room/dinngoo-maintain`** 下重新执行 **`sudo bash deploy/install-dinngoo-server-maintain-wrappers.sh`**；更新 cron、`REPORT_DIR`、Caddy 等与路径相关的配置。
