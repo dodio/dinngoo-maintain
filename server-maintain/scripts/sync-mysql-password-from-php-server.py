@@ -1,13 +1,18 @@
 #!/usr/bin/env python3
-"""将 php-server/.env 中的 MYSQL_PASSWORD 合并到 server-maintain/.env（不写出口令）。"""
+"""将 php-server/.env 中的 MYSQL_PASSWORD 合并到 server-maintain/.env（不写出口令）。
+
+路径固定为 deploy/SERVER-MAINTAIN-部署.md 中的 /srv/dinngoo-room 约定。
+"""
 import re
 import sys
 from pathlib import Path
 
+DINNGOO_SRV = Path("/srv/dinngoo-room")
+
 
 def main() -> int:
-    php_path = Path("/srv/dinggu-room/php-server/.env")
-    maint_path = Path("/srv/dinggu-room/dinngoo-maintain/server-maintain/.env")
+    php_path = DINNGOO_SRV / "php-server" / ".env"
+    maint_path = DINNGOO_SRV / "dinngoo-maintain" / "server-maintain" / ".env"
     if not php_path.is_file():
         print("missing", php_path, file=sys.stderr)
         return 1

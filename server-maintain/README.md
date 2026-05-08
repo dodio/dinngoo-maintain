@@ -1,6 +1,6 @@
 # server-maintain — 叮谷整站运维小工具
 
-与 [`supports/deploy`](../deploy/README.md) 配套：在**宿主机**上读取 Caddy JSON 日志、写静态日报、采集系统指标 JSON、全量备份 MySQL、手动轮换 Caddy 门禁 Token。
+与 [`supports/deploy`](../deploy/README.md) 配套：**约定**整站根目录 **`/srv/dinngoo-room`**，本工具在 **`dinngoo-maintain/server-maintain`**（见 [`SERVER-MAINTAIN-部署.md`](../deploy/SERVER-MAINTAIN-部署.md) 开头「0. 目录约定」）。
 
 ## 前置
 
@@ -45,9 +45,9 @@ HTTP 访问量仍以 **Caddy JSON 访问日志**为主；本脚本侧重**容器
 | `npm run metrics` | 写入 `METRICS_JSON_PATH`（默认 `$REPORT_DIR/metrics.json`），供 `dashboard.html` 轮询。 |
 | `bash scripts/mysql-full-backup.sh` | 全量 `mysqldump \| gzip` 到 `BACKUP_DIR`，并按 `BACKUP_KEEP_DAYS` 清理。 |
 | `npm run docker-logs` | 按日筛选 Docker 日志并关键词统计；见上文「Docker 容器日志」。 |
-| `python3 scripts/sync-mysql-password-from-php-server.py` | **在 Caddy/备份所在宿主机上**运行：从 `/srv/dinggu-room/php-server/.env` 读取 **`MYSQL_PASSWORD`** 写入本目录 **`.env`**（不打印密码）。首次部署或改过 php-server 口令后可再跑一次。 |
-| `sudo bash scripts/fetch-caddy-gate-tokens.sh` | 在**本机**（Caddy 所在宿主机）用 root 查看 `EnvironmentFile` 中的 **`MAINT_*` / `OP_*`** 行，便于核对书签用的 `entry_token`。 |
-| `npm run rotate-tokens` | **手动**轮换 `MAINT_*` / `OP_*` token；**不要**配 cron。见下方。 |
+| `python3 scripts/sync-mysql-password-from-php-server.py` | **在 Caddy/备份所在宿主机上**运行：从 `/srv/dinngoo-room/php-server/.env` 读取 **`MYSQL_PASSWORD`** 写入本目录 **`.env`**（不打印密码）。首次部署或改过 php-server 口令后可再跑一次。 |
+| `bash scripts/rotate-gate-tokens.sh` | 等同 `sudo dinngoo-rotate-gate-tokens`（需先执行 [`deploy/install-dinngoo-server-maintain-wrappers.sh`](../deploy/install-dinngoo-server-maintain-wrappers.sh)） |
+| `dinngoo-fetch-caddy-gate-tokens` | 查看 `EnvironmentFile` 中 `MAINT_*` / `OP_*`（安装包装后免密） |
 
 ### 排障：脚本报错时日志怎么看
 
@@ -64,38 +64,38 @@ HTTP 访问量仍以 **Caddy JSON 访问日志**为主；本脚本侧重**容器
 ### Cron 示例（UTC+8 每日 0:20 跑昨日日报）
 
 ```cron
-20 0 * * * cd /srv/dinggu-room/supports/server-maintain && set -a && [ -f .env ] && . ./.env && set +a && /usr/bin/node scripts/generate-daily-report.mjs >>/var/log/maint-report.log 2>&1
+20 0 * * * cd /srv/dinngoo-room/dinngoo-maintain/server-maintain && set -a && [ -f .env ] && . ./.env && set +a && /usr/bin/node scripts/generate-daily-report.mjs >>/var/log/maint-report.log 2>&1
 ```
 
 ### 指标采集（每 10 秒，按负载可调）
 
 ```cron
-* * * * * for i in 0 1 2 3 4; do sleep 10; cd /srv/dinggu-room/supports/server-maintain && set -a && [ -f .env ] && . ./.env && set +a && /usr/bin/node scripts/collect-metrics.mjs >>/var/log/maint-metrics.log 2>&1; done
+* * * * * for i in 0 1 2 3 4; do sleep 10; cd /srv/dinngoo-room/dinngoo-maintain/server-maintain && set -a && [ -f .env ] && . ./.env && set +a && /usr/bin/node scripts/collect-metrics.mjs >>/var/log/maint-metrics.log 2>&1; done
 ```
 
 ### MySQL 备份（每日）
 
 ```cron
-5 1 * * * cd /srv/dinggu-room/supports/server-maintain && set -a && . ./.env && set +a && bash scripts/mysql-full-backup.sh >>/var/log/maint-mysql-backup.log 2>&1
+5 1 * * * cd /srv/dinngoo-room/dinngoo-maintain/server-maintain && set -a && . ./.env && set +a && bash scripts/mysql-full-backup.sh >>/var/log/maint-mysql-backup.log 2>&1
 ```
 
 ### Docker 日志按日扫描（可选）
 
 ```cron
-25 0 * * * cd /srv/dinggu-room/supports/server-maintain && set -a && [ -f .env ] && . ./.env && set +a && /usr/bin/node scripts/analyze-docker-logs.mjs >>/var/log/maint-docker-logs.log 2>&1
+25 0 * * * cd /srv/dinngoo-room/dinngoo-maintain/server-maintain && set -a && [ -f .env ] && . ./.env && set +a && /usr/bin/node scripts/analyze-docker-logs.mjs >>/var/log/maint-docker-logs.log 2>&1
 ```
 
 （依赖 `.env` 中已配置 `DOCKER_LOG_CONTAINERS` 与可选 `REPORT_DIR`。查看单容器 json-file 物理路径：`docker inspect -f '{{.LogPath}}' <容器名>`。）
 
-### Token 轮换（仅手动）
+新机器：[`deploy/SERVER-MAINTAIN-部署.md`](../deploy/SERVER-MAINTAIN-部署.md)。安装免密：`cd` 到 dinngoo-maintain 根目录后 **`sudo bash deploy/install-dinngoo-server-maintain-wrappers.sh`**（无需传参）。
 
-1. `--write` 时脚本会先把 **`CADDY_ENV_FILE`** 与 **`/etc/caddy/Caddyfile`**（可用 **`CADDYFILE_PATH`** 覆盖）备份到**宿主机目录**：默认 **`CADDY_ROTATE_BACKUP_DIR`**，未设置时取 **`server-maintain/.env`** 里 **`BACKUP_DIR`** 的**父目录下的 `caddy/`**（与 MySQL 全量备份目录同级，例如 `.../backups/mysql` → `.../backups/caddy`）；再否则 **`/srv/dinggu-room/backups/caddy`**。勿把该目录提交到 Git。
-2. 预览：`node scripts/rotate-gate-tokens.mjs --dry-run`
-3. 写回（**不要用 `sudo node`**，sudo 默认 PATH 里没有 nvm 的 node）：`bash scripts/rotate-gate-tokens.sh --write`（或 `sudo "$(command -v node)" scripts/rotate-gate-tokens.mjs --write`）。可加 `--env-file /etc/caddy/…`。
-4. `sudo systemctl reload caddy`
-5. 通知运营更新带 `entry_token` 的书签。`*_GATE_TOKEN_OLD` 在窗口期内仍接受旧 token。
+### Token 轮换（手动，勿配 cron）
 
-`--maint-only` / `--op-only` 可只轮换一组。
+- 预览：`npm run rotate-tokens -- --dry-run` 或 `node scripts/rotate-gate-tokens.mjs --dry-run`
+- 写回（**sudo 下含正确 node**）：`bash scripts/rotate-gate-tokens.sh --write` 或 `dinngoo-rotate-gate-tokens --write`
+- `--write` 会先备份 Caddy 环境文件与 Caddyfile，再写 `CADDY_ENV_FILE`；然后 `sudo systemctl reload caddy`，并通知更新带 `entry_token` 的书签。
+
+`--maint-only` / `--op-only` 可用。详见 `scripts/rotate-gate-tokens.mjs` 头注释。
 
 ## Caddy 环境变量（摘录）
 

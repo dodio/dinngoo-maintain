@@ -1,12 +1,9 @@
 #!/usr/bin/env bash
-# 用当前用户 PATH 解析出的 node 绝对路径再 sudo，避免「sudo 找不到 node」（nvm 装在用户目录时常见）。
-# 用法: bash scripts/rotate-gate-tokens.sh [--dry-run] [--write] ...
-# 可选 NODE_BIN=/绝对路径/node
+# 调用已安装的包装命令（内含 sudo 下正确的 node 路径）。未安装时见 deploy/SERVER-MAINTAIN-部署.md
 set -euo pipefail
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-NODE="${NODE_BIN:-$(command -v node || true)}"
-if [[ -z "$NODE" || ! -x "$NODE" ]]; then
-  echo "未找到 node，请先安装或设置 NODE_BIN=/path/to/node" >&2
-  exit 1
-fi
-exec sudo -E "$NODE" "$ROOT/scripts/rotate-gate-tokens.mjs" "$@"
+WR=/usr/local/sbin/dinngoo-rotate-gate-tokens
+[[ -x "$WR" ]] || {
+	echo "未找到 $WR。执行: cd /srv/dinngoo-room/dinngoo-maintain && sudo bash deploy/install-dinngoo-server-maintain-wrappers.sh" >&2
+	exit 1
+}
+exec sudo "$WR" "$@"
