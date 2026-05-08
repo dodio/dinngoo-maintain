@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>运维日报 __REPORT_DATE__</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" crossorigin="anonymous"></script>
+  <style>
+    :root {
+      --ocean-50: #e6f7fa;
+      --ocean-500: #0090b3;
+      --ocean-600: #007599;
+      --ocean-900: #002e42;
+      --lagoon-500: #00a99d;
+      --gray-50: #f9fafb;
+      --gray-200: #e5e7eb;
+      --gray-500: #6b7280;
+      --gray-700: #374151;
+      --gray-800: #1f2937;
+      --color-error: #ef4444;
+      --color-warning: #f59e0b;
+      --color-success: #10b981;
+      --radius-lg: 12px;
+      --radius-xl: 16px;
+      --shadow-ocean: 0 8px 24px rgba(0, 144, 179, 0.12);
+      --font-sans: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: var(--font-sans);
+      font-size: 15px;
+      line-height: 1.6;
+      color: var(--gray-800);
+      background: var(--ocean-50);
+    }
+    .wrap { max-width: 1100px; margin: 0 auto; padding: 24px 16px 48px; }
+    header {
+      background: var(--ocean-900);
+      color: #fff;
+      padding: 20px 24px;
+      border-radius: var(--radius-xl);
+      margin-bottom: 24px;
+      box-shadow: var(--shadow-ocean);
+    }
+    header h1 { margin: 0 0 8px; font-size: 28px; font-weight: 700; letter-spacing: -0.3px; }
+    header .muted { opacity: 0.85; font-size: 13px; }
+    .grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
+    .card {
+      background: #fff;
+      border-radius: var(--radius-lg);
+      padding: 16px 18px;
+      box-shadow: var(--shadow-ocean);
+      border: 1px solid var(--gray-200);
+    }
+    .card h3 {
+      margin: 0 0 8px;
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--ocean-600);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .stat { font-size: 22px; font-weight: 700; color: var(--ocean-900); }
+    .stat.warn { color: var(--color-warning); }
+    .stat.err { color: var(--color-error); }
+    section { margin-top: 28px; }
+    section h2 {
+      margin: 0 0 12px;
+      font-size: 20px;
+      font-weight: 600;
+      color: var(--ocean-900);
+    }
+    .charts { display: grid; gap: 20px; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
+    .chart-box { background: #fff; border-radius: var(--radius-lg); padding: 16px; box-shadow: var(--shadow-ocean); height: 300px; position: relative; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+      background: #fff;
+      border-radius: var(--radius-lg);
+      overflow: hidden;
+      box-shadow: var(--shadow-ocean);
+    }
+    th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--gray-200); }
+    th { background: var(--gray-50); font-weight: 600; color: var(--gray-700); }
+    .notes { color: var(--gray-500); font-size: 13px; }
+    pre.sample {
+      background: var(--gray-50);
+      padding: 12px;
+      border-radius: var(--radius-lg);
+      overflow-x: auto;
+      font-size: 12px;
+      border: 1px solid var(--gray-200);
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>运维访问与安全日报</h1>
+      <div class="muted">报表日：<strong>__REPORT_DATE__</strong> · 生成时间见页底</div>
+    </header>
+
+    <div class="grid" id="summary-cards"></div>
+
+    <section>
+      <h2>HTTP 状态分布（合并 www + op 日志）</h2>
+      <div class="charts">
+        <div class="chart-box"><canvas id="chart-status"></canvas></div>
+        <div class="chart-box"><canvas id="chart-class"></canvas></div>
+      </div>
+    </section>
+
+    <section>
+      <h2>合并 · Top 路径</h2>
+      <div class="card" style="padding:0;overflow:hidden;"><table id="tbl-paths"><thead><tr><th>路径</th><th>次数</th></tr></thead><tbody></tbody></table></div>
+    </section>
+
+    <section>
+      <h2>合并 · 404 来源 IP（Top）</h2>
+      <div class="card" style="padding:0;overflow:hidden;"><table id="tbl-404ip"><thead><tr><th>IP</th><th>404 次数</th></tr></thead><tbody></tbody></table></div>
+    </section>
+
+    <section>
+      <h2>启发式嗅探命中（URI 子串）</h2>
+      <p class="notes">命中次数为请求条数中包含下列敏感路径子串的计数，仅供参考。</p>
+      <div class="card" style="padding:0;overflow:hidden;"><table id="tbl-probe"><thead><tr><th>子串</th><th>命中</th></tr></thead><tbody></tbody></table></div>
+    </section>
+
+    <section>
+      <h2>SSH 认证日志摘要</h2>
+      <div id="ssh-block"></div>
+    </section>
+
+    <section>
+      <h2>说明</h2>
+      <ul class="notes" id="notes-ul"></ul>
+      <p class="notes" id="footer-meta"></p>
+    </section>
+  </div>
+
+  <script>
+    window.__REPORT__ = __REPORT_JSON__;
+  </script>
+  <script>
+    (function () {
+      const cards = document.getElementById('summary-cards');
+      while (cards.firstChild) cards.removeChild(cards.firstChild);
+
+      const d = window.__REPORT__;
+      if (!d) return;
+
+      const pct = (x) => (x * 100).toFixed(2) + '%';
+      const m = d.merged || {};
+
+      function card(title, html, cls) {
+        const el = document.createElement('div');
+        el.className = 'card';
+        el.innerHTML = '<h3>' + title + '</h3><div class="stat ' + (cls || '') + '">' + html + '</div>';
+        cards.appendChild(el);
+      }
+      card('合并请求数', (m.total || 0).toLocaleString());
+      card('5xx 次数 / 占比', (m.error5xx || 0) + ' / ' + pct(m.error5xxRate || 0), m.error5xx ? 'err' : '');
+      card('4xx 次数 / 占比', (m.client4xx || 0) + ' / ' + pct(m.client4xxRate || 0), m.client4xx ? 'warn' : '');
+      card('嗅探启发式命中', (m.probeHits || 0).toLocaleString(), m.probeHits ? 'warn' : '');
+      card('www 行命中', (d.lineStats && d.lineStats.matchedWww) || 0);
+      card('op 行命中', (d.lineStats && d.lineStats.matchedOp) || 0);
+
+      function fillTable(id, rows) {
+        const tb = document.querySelector('#' + id + ' tbody');
+        tb.innerHTML = '';
+        rows.forEach(([k, v]) => {
+          const tr = document.createElement('tr');
+          const td0 = document.createElement('td');
+          td0.textContent = String(k);
+          const td1 = document.createElement('td');
+          td1.textContent = String(v);
+          tr.appendChild(td0);
+          tr.appendChild(td1);
+          tb.appendChild(tr);
+        });
+      }
+
+      fillTable('tbl-paths', Object.entries(m.topPaths || {}));
+      fillTable('tbl-404ip', Object.entries(m.top404Ips || {}));
+      fillTable('tbl-probe', Object.entries(m.probeByPath || {}));
+
+      const ssh = d.sshAuth || {};
+      const sshEl = document.getElementById('ssh-block');
+      if (!ssh.ok) {
+        sshEl.innerHTML = '<p class="notes">未采集：' + (ssh.reason || '未知') + '</p>';
+      } else {
+        sshEl.innerHTML =
+          '<div class="grid">' +
+          '<div class="card"><h3>Failed password</h3><div class="stat warn">' + (ssh.failedPassword || 0) + '</div></div>' +
+          '<div class="card"><h3>Invalid user</h3><div class="stat warn">' + (ssh.invalidUser || 0) + '</div></div>' +
+          '</div>' +
+          (ssh.samples && ssh.samples.length
+            ? '<pre class="sample">' + ssh.samples.map(function (s) {
+                return String(s).replace(/</g, '&lt;');
+              }).join('\n') + '</pre>'
+            : '');
+      }
+
+      const ul = document.getElementById('notes-ul');
+      ul.innerHTML = '';
+      (d.notes || []).forEach(n => {
+        const li = document.createElement('li');
+        li.textContent = n;
+        ul.appendChild(li);
+      });
+      document.getElementById('footer-meta').textContent =
+        '生成时间（UTC）：' + (d.generatedAt || '') + ' · 时区提示：' + (d.timezoneHint || '') +
+        ' · 解析错误行数：' + ((d.lineStats && d.lineStats.parseErrors) || 0);
+
+      const byStatus = m.byStatus || {};
+      const labels = Object.keys(byStatus).sort((a,b) => Number(a) - Number(b));
+      const values = labels.map(k => byStatus[k]);
+
+      if (window.Chart && labels.length) {
+        new Chart(document.getElementById('chart-status'), {
+          type: 'bar',
+          data: {
+            labels,
+            datasets: [{
+              label: '请求数',
+              data: values,
+              backgroundColor: 'rgba(0, 144, 179, 0.65)',
+              borderRadius: 8,
+            }],
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+          },
+        });
+
+        let ok = 0, c4 = 0, c5 = 0;
+        labels.forEach((code, i) => {
+          const n = Number(code);
+          const c = values[i];
+          if (n >= 200 && n < 400) ok += c;
+          else if (n >= 400 && n < 500) c4 += c;
+          else if (n >= 500) c5 += c;
+          else ok += c;
+        });
+        new Chart(document.getElementById('chart-class'), {
+          type: 'doughnut',
+          data: {
+            labels: ['2xx/3xx', '4xx', '5xx'],
+            datasets: [{
+              data: [ok, c4, c5],
+              backgroundColor: [
+                'rgba(16, 185, 129, 0.75)',
+                'rgba(245, 158, 11, 0.75)',
+                'rgba(239, 68, 68, 0.75)',
+              ],
+            }],
+          },
+          options: { responsive: true, maintainAspectRatio: false },
+        });
+      }
+    })();
+  </script>
+</body>
+</html>

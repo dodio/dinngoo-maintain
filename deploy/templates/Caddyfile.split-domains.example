@@ -17,8 +17,15 @@
 www.example.com {
 	import secure_headers
 
+	# JSON 访问日志：按大小滚动 + 保留份数/时长。按「自然日」统计由日报脚本根据行内 ts 过滤（不要求单日单文件）。
+	# 若 `roll_local_time` 在你本机 Caddy 版本上报错，删掉该行后再 `caddy validate`。
 	log {
-		output file /var/log/caddy/www-access.json
+		output file /var/log/caddy/www-access.json {
+			roll_size     100MiB
+			roll_keep     30
+			roll_keep_for 720h
+			roll_local_time
+		}
 		format json
 	}
 
@@ -31,7 +38,12 @@ op.example.com {
 	import secure_headers
 
 	log {
-		output file /var/log/caddy/op-access.json
+		output file /var/log/caddy/op-access.json {
+			roll_size     100MiB
+			roll_keep     30
+			roll_keep_for 720h
+			roll_local_time
+		}
 		format json
 	}
 
@@ -57,6 +69,46 @@ op.example.com {
 	}
 
 	# 3) 未通过门禁：404
+	handle {
+		respond "Not Found" 404
+	}
+}
+
+# 运维：日报 / 指标仪表盘静态站（与 op 相同的 Query + Cookie 门禁模式，独立 cookie 名与 token）
+# 将下面域名改为实际子域；{$MAINT_STATIC_ROOT} 指向宿主机日报输出目录（与 server-maintain 的 REPORT_DIR 一致）。
+# 若需单独子域仅服务仪表盘，可复制本段并修改 server 名。
+maint.example.com {
+	import secure_headers
+
+	log {
+		output file /var/log/caddy/maint-access.json {
+			roll_size     50MiB
+			roll_keep     14
+			roll_keep_for 720h
+			roll_local_time
+		}
+		format json
+	}
+
+	@maint_gate_by_query expression `
+		{http.request.uri.query.entry_token} == "{$MAINT_GATE_TOKEN}" ||
+		("{$MAINT_GATE_TOKEN_OLD}" != "" && {http.request.uri.query.entry_token} == "{$MAINT_GATE_TOKEN_OLD}")
+	`
+	handle @maint_gate_by_query {
+		header Set-Cookie "maint_gate={$MAINT_GATE_TOKEN}; Max-Age=2592000; Path=/; HttpOnly; Secure; SameSite=Lax"
+		redir {path} 302
+	}
+
+	@maint_gate_by_cookie expression `
+		{http.request.cookie.maint_gate} == "{$MAINT_GATE_TOKEN}" ||
+		("{$MAINT_GATE_TOKEN_OLD}" != "" && {http.request.cookie.maint_gate} == "{$MAINT_GATE_TOKEN_OLD}")
+	`
+	handle @maint_gate_by_cookie {
+		header Set-Cookie "maint_gate={$MAINT_GATE_TOKEN}; Max-Age=2592000; Path=/; HttpOnly; Secure; SameSite=Lax"
+		root * {$MAINT_STATIC_ROOT}
+		file_server
+	}
+
 	handle {
 		respond "Not Found" 404
 	}

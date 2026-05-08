@@ -8,7 +8,8 @@
 | [**分域部署方案.md**](./分域部署方案.md) | C 端 Next + 后台 PHP + Caddy 分域与 `op` 门禁 |
 | [**测试环境部署和更新维护.md**](./测试环境部署和更新维护.md) | 当前测试机目录、端口、Compose、DB 迁移、日常更新 |
 | [**安全事件排查总结-2026-05-02.md**](./安全事件排查总结-2026-05-02.md) | 备案期安全事件留痕（历史处置细节以正文为准） |
-| [**templates/Caddyfile.split-domains.example**](./templates/Caddyfile.split-domains.example) | Caddy 分域 + 门禁模板（复制到主机 `/etc/caddy/` 等后修改） |
+| [**templates/Caddyfile.split-domains.example**](./templates/Caddyfile.split-domains.example) | Caddy 分域 + 门禁 + 运维静态站 + 访问日志滚动模板 |
+| [**server-maintain/**](../server-maintain/README.md) | 日报 / 指标 JSON / MySQL 全量备份 / Docker 日志扫描 / 手动轮换 token |
 
 **仓库对照（默认单机路径示例）**
 

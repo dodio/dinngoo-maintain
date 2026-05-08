@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>服务器指标 · 叮谷运维</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" crossorigin="anonymous"></script>
+  <style>
+    :root {
+      --ocean-50: #e6f7fa;
+      --ocean-500: #0090b3;
+      --ocean-600: #007599;
+      --ocean-900: #002e42;
+      --lagoon-500: #00a99d;
+      --gray-50: #f9fafb;
+      --gray-200: #e5e7eb;
+      --gray-500: #6b7280;
+      --gray-700: #374151;
+      --gray-800: #1f2937;
+      --color-error: #ef4444;
+      --radius-lg: 12px;
+      --radius-xl: 16px;
+      --shadow-ocean: 0 8px 24px rgba(0, 144, 179, 0.12);
+      --font-sans: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: var(--font-sans);
+      font-size: 15px;
+      line-height: 1.6;
+      color: var(--gray-800);
+      background: var(--ocean-50);
+    }
+    .wrap { max-width: 960px; margin: 0 auto; padding: 24px 16px 40px; }
+    header {
+      background: var(--ocean-900);
+      color: #fff;
+      padding: 20px 24px;
+      border-radius: var(--radius-xl);
+      margin-bottom: 20px;
+      box-shadow: var(--shadow-ocean);
+    }
+    header h1 { margin: 0; font-size: 24px; font-weight: 700; }
+    .sub { margin-top: 8px; font-size: 13px; opacity: 0.88; }
+    .grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
+    .card {
+      background: #fff;
+      border-radius: var(--radius-lg);
+      padding: 14px 16px;
+      box-shadow: var(--shadow-ocean);
+      border: 1px solid var(--gray-200);
+    }
+    .card h3 {
+      margin: 0 0 6px;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--ocean-600);
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+    .val { font-size: 20px; font-weight: 700; color: var(--ocean-900); }
+    .muted { color: var(--gray-500); font-size: 13px; margin-top: 4px; }
+    .err { color: var(--color-error); }
+    section { margin-top: 22px; }
+    section h2 { margin: 0 0 10px; font-size: 18px; color: var(--ocean-900); font-weight: 600; }
+    .chart-tile {
+      background: #fff;
+      border-radius: var(--radius-lg);
+      padding: 12px;
+      box-shadow: var(--shadow-ocean);
+      height: 260px;
+      position: relative;
+    }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; background: #fff; border-radius: var(--radius-lg); overflow: hidden; box-shadow: var(--shadow-ocean); }
+    th, td { padding: 8px 10px; text-align: left; border-bottom: 1px solid var(--gray-200); }
+    th { background: var(--gray-50); font-weight: 600; }
+    .banner { padding: 10px 14px; background: #fff; border-radius: var(--radius-lg); border: 1px dashed var(--gray-200); font-size: 13px; color: var(--gray-700); }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>服务器实时指标</h1>
+      <div class="sub">与 <code>metrics.json</code> 同源轮询；由宿主机定时任务写入 JSON。</div>
+    </header>
+
+    <div class="banner" id="status-line">正在拉取…</div>
+
+    <section>
+      <div class="grid" id="cards"></div>
+    </section>
+
+    <section>
+      <h2>内存占用趋势（浏览器侧采样）</h2>
+      <div class="chart-tile"><canvas id="mem-chart"></canvas></div>
+    </section>
+
+    <section>
+      <h2>磁盘</h2>
+      <div class="card" style="padding:0; overflow:hidden;">
+        <table id="tbl-df"><thead><tr><th>挂载点</th><th>已用 %</th><th>可用</th></tr></thead><tbody></tbody></table>
+      </div>
+    </section>
+
+    <section>
+      <h2>Docker（可选）</h2>
+      <div id="docker-box" class="muted">无数据或未安装 docker CLI</div>
+    </section>
+  </div>
+
+  <script>
+    (function () {
+      var POLL_MS = 5000;
+      var memHistory = [];
+      var maxPoints = 36;
+      var chart = null;
+
+      function fmtBytes(n) {
+        if (n == null || isNaN(n)) return '—';
+        var u = ['B', 'KB', 'MB', 'GB', 'TB'];
+        var i = 0;
+        var x = Number(n);
+        while (x >= 1024 && i < u.length - 1) { x /= 1024; i++; }
+        return x.toFixed(i ? 1 : 0) + ' ' + u[i];
+      }
+
+      function ensureChart() {
+        if (chart || !window.Chart) return;
+        var ctx = document.getElementById('mem-chart');
+        chart = new Chart(ctx, {
+          type: 'line',
+          data: {
+            labels: [],
+            datasets: [{
+              label: '内存占用率 %',
+              data: [],
+              borderColor: 'rgba(0, 144, 179, 0.9)',
+              backgroundColor: 'rgba(0, 144, 179, 0.12)',
+              tension: 0.25,
+              fill: true,
+            }],
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+              y: { min: 0, max: 100, ticks: { callback: function (v) { return v + '%'; } } },
+            },
+          },
+        });
+      }
+
+      function pushMem(pct) {
+        ensureChart();
+        if (!chart) return;
+        var t = new Date().toLocaleTimeString();
+        memHistory.push({ t: t, p: pct });
+        if (memHistory.length > maxPoints) memHistory.shift();
+        chart.data.labels = memHistory.map(function (o) { return o.t; });
+        chart.data.datasets[0].data = memHistory.map(function (o) { return o.p; });
+        chart.update('none');
+      }
+
+      function setCards(m) {
+        var root = document.getElementById('cards');
+        root.innerHTML = '';
+        function card(title, main, note) {
+          var el = document.createElement('div');
+          el.className = 'card';
+          el.innerHTML = '<h3>' + title + '</h3><div class="val">' + main + '</div>' +
+            (note ? '<div class="muted">' + note + '</div>' : '');
+          root.appendChild(el);
+        }
+
+        var load = (m.loadavg || []).map(function (x) { return x.toFixed(2); }).join(' / ');
+        var memPct = m.memory && m.memory.totalBytes
+          ? ((m.memory.usedBytes / m.memory.totalBytes) * 100)
+          : 0;
+        card('Load', load || '—', '1 / 5 / 15 分钟');
+        card('内存占用', memPct.toFixed(1) + '%', fmtBytes(m.memory && m.memory.usedBytes) + ' / ' + fmtBytes(m.memory && m.memory.totalBytes));
+        card('CPU 逻辑核', String(m.cpuCount || '—'), m.hostname || '');
+
+        var bk = m.dbBackup;
+        if (bk) {
+          var when = '';
+          if (bk.mtimeIso) {
+            try {
+              when = new Date(bk.mtimeIso).toLocaleString('zh-CN', {
+                dateStyle: 'medium',
+                timeStyle: 'medium'
+              });
+            } catch (e) {
+              when = String(bk.mtimeIso);
+            }
+          } else if (bk.mtimeMs != null) {
+            when = new Date(Number(bk.mtimeMs)).toLocaleString('zh-CN', {
+              dateStyle: 'medium',
+              timeStyle: 'medium'
+            });
+          } else {
+            when = '—';
+          }
+          card('最新 DB 备份', when,
+            (bk.fileName || '—') + ' · ' + fmtBytes(bk.sizeBytes));
+        } else {
+          card('最新 DB 备份', '—', m.dbBackupError || '无备份文件（检查 BACKUP_DIR / BACKUP_GLOB）');
+        }
+      }
+
+      function setDisk(rows) {
+        var tb = document.querySelector('#tbl-df tbody');
+        tb.innerHTML = '';
+        (rows || []).forEach(function (r) {
+          var tr = document.createElement('tr');
+          var td0 = document.createElement('td'); td0.textContent = r.mounted || '';
+          var td1 = document.createElement('td'); td1.textContent = String(r.usePercent ?? '') + '%';
+          var td2 = document.createElement('td'); td2.textContent = fmtBytes(r.availBytes);
+          tr.appendChild(td0); tr.appendChild(td1); tr.appendChild(td2);
+          tb.appendChild(tr);
+        });
+      }
+
+      function setDocker(list) {
+        var box = document.getElementById('docker-box');
+        if (!list || !list.length) {
+          box.textContent = '无数据（docker stats 不可用或无阻容器）';
+          return;
+        }
+        var tbl = document.createElement('table');
+        tbl.innerHTML = '<thead><tr><th>容器</th><th>CPU%</th><th>内存</th></tr></thead>';
+        var tbody = document.createElement('tbody');
+        list.forEach(function (r) {
+          var tr = document.createElement('tr');
+          var a = document.createElement('td'); a.textContent = r.name;
+          var b = document.createElement('td'); b.textContent = r.cpuPerc || '';
+          var c = document.createElement('td'); c.textContent = r.memUsage || '';
+          tr.appendChild(a); tr.appendChild(b); tr.appendChild(c);
+          tbody.appendChild(tr);
+        });
+        tbl.appendChild(tbody);
+        box.innerHTML = '';
+        box.appendChild(tbl);
+      }
+
+      function tick() {
+        fetch('metrics.json?t=' + Date.now(), { cache: 'no-store' })
+          .then(function (r) { return r.json(); })
+          .then(function (m) {
+            document.getElementById('status-line').textContent =
+              '上次更新：' + (m.tsIso || new Date(m.ts).toISOString());
+            setCards(m);
+            setDisk(m.disks);
+            setDocker(m.docker);
+            var memPct = m.memory && m.memory.totalBytes
+              ? ((m.memory.usedBytes / m.memory.totalBytes) * 100)
+              : 0;
+            pushMem(Number(memPct.toFixed(1)));
+          })
+          .catch(function () {
+            document.getElementById('status-line').innerHTML =
+              '<span class="err">拉取 metrics.json 失败（路径或权限？）</span>';
+          });
+      }
+
+      tick();
+      setInterval(tick, POLL_MS);
+    })();
+  </script>
+</body>
+</html>
