@@ -4,14 +4,19 @@
  * 用法:
  *   node scripts/rotate-gate-tokens.mjs [--dry-run] [--write] [--maint-only] [--op-only]
  * 环境变量 CADDY_ENV_FILE=/etc/caddy/caddy.env
+ * --write 前会自动拷贝 Caddy EnvironmentFile 与 Caddyfile 到**宿主机备份目录**（见下方
+ * CADDY_ROTATE_BACKUP_DIR / BACKUP_DIR），与数据库全量备份同级侧存放、不写入 Git 仓库。
+ * 可选 CADDYFILE_PATH 覆盖默认的 /etc/caddy/Caddyfile（不存在则跳过备份）。
  */
 
 import {
   readFileSync,
   writeFileSync,
   existsSync,
+  copyFileSync,
+  mkdirSync,
 } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { dirname, resolve, join, basename } from "node:path";
 import { fileURLToPath } from "node:url";
 import crypto from "node:crypto";
 
@@ -20,6 +25,20 @@ import { loadEnvFile } from "../lib/load-env.mjs";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = dirname(__dirname);
 loadEnvFile(ROOT);
+
+/** 与 mysql-full-backup 的 BACKUP_DIR 同级下的 caddy/，例如 .../backups/mysql → .../backups/caddy */
+function resolveCaddyBackupDir() {
+  const explicit = (process.env.CADDY_ROTATE_BACKUP_DIR || "").trim();
+  if (explicit) return resolve(explicit);
+  const mysql = (process.env.BACKUP_DIR || "").trim();
+  if (mysql) {
+    const abs = mysql.startsWith("/") ? mysql : resolve(ROOT, mysql);
+    return join(dirname(abs), "caddy");
+  }
+  return "/srv/dinggu-room/backups/caddy";
+}
+
+const BACKUP_DIR = resolveCaddyBackupDir();
 
 function parseArgs(argv) {
   let dryRun = false;
@@ -108,6 +127,25 @@ function readEnvMap(path) {
   return map;
 }
 
+/** @param {string} absPath */
+function backupFileToHost(absPath, kind) {
+  if (!absPath || !existsSync(absPath)) return;
+  mkdirSync(BACKUP_DIR, { recursive: true });
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const safeBase = basename(absPath).replace(/[^a-zA-Z0-9._-]/g, "_");
+  const dest = join(BACKUP_DIR, `${kind}-${safeBase}-${stamp}.bak`);
+  copyFileSync(absPath, dest);
+  console.log("已备份 ->", dest);
+}
+
+function backupCaddyArtifacts(envFilePath) {
+  console.log("Caddy 配置备份目录:", BACKUP_DIR);
+  backupFileToHost(envFilePath, "caddy-env");
+  const caddyfile =
+    (process.env.CADDYFILE_PATH || "").trim() || "/etc/caddy/Caddyfile";
+  backupFileToHost(caddyfile, "caddy");
+}
+
 function main() {
   const { dryRun, write, maintOnly, opOnly, envFile } = parseArgs(
     process.argv.slice(2),
@@ -191,7 +229,9 @@ function main() {
   }
 
   if (!write) {
-    console.log("\n仅预览。要对文件写回请追加 --write（并建议先备份 CADDY_ENV_FILE）。");
+    console.log(
+      "\n仅预览。写回请追加 --write（会先把 Caddy 环境文件与 Caddyfile 备份到宿主机目录，默认与 **BACKUP_DIR** 同级的 **caddy/**，再写环境文件）。",
+    );
     for (const m of meta) {
       console.log(`\n${m.label}_GATE_TOKEN=${m.newPrimary}`);
       if (m.oldSlot) console.log(`${m.label}_GATE_TOKEN_OLD=${m.oldSlot}`);
@@ -208,6 +248,7 @@ function main() {
   }
 
   const before = readFileSync(filePath, "utf8");
+  backupCaddyArtifacts(filePath);
   const after = patchEnvLines(before, updates);
   writeFileSync(filePath, after, "utf8");
   console.log("已更新", filePath);

@@ -45,6 +45,7 @@ HTTP 访问量仍以 **Caddy JSON 访问日志**为主；本脚本侧重**容器
 | `npm run metrics` | 写入 `METRICS_JSON_PATH`（默认 `$REPORT_DIR/metrics.json`），供 `dashboard.html` 轮询。 |
 | `bash scripts/mysql-full-backup.sh` | 全量 `mysqldump \| gzip` 到 `BACKUP_DIR`，并按 `BACKUP_KEEP_DAYS` 清理。 |
 | `npm run docker-logs` | 按日筛选 Docker 日志并关键词统计；见上文「Docker 容器日志」。 |
+| `python3 scripts/sync-mysql-password-from-php-server.py` | **在 Caddy/备份所在宿主机上**运行：从 `/srv/dinggu-room/php-server/.env` 读取 **`MYSQL_PASSWORD`** 写入本目录 **`.env`**（不打印密码）。首次部署或改过 php-server 口令后可再跑一次。 |
 | `sudo bash scripts/fetch-caddy-gate-tokens.sh` | 在**本机**（Caddy 所在宿主机）用 root 查看 `EnvironmentFile` 中的 **`MAINT_*` / `OP_*`** 行，便于核对书签用的 `entry_token`。 |
 | `npm run rotate-tokens` | **手动**轮换 `MAINT_*` / `OP_*` token；**不要**配 cron。见下方。 |
 
@@ -88,9 +89,9 @@ HTTP 访问量仍以 **Caddy JSON 访问日志**为主；本脚本侧重**容器
 
 ### Token 轮换（仅手动）
 
-1. 备份 Caddy EnvironmentFile。
+1. `--write` 时脚本会先把 **`CADDY_ENV_FILE`** 与 **`/etc/caddy/Caddyfile`**（可用 **`CADDYFILE_PATH`** 覆盖）备份到**宿主机目录**：默认 **`CADDY_ROTATE_BACKUP_DIR`**，未设置时取 **`server-maintain/.env`** 里 **`BACKUP_DIR`** 的**父目录下的 `caddy/`**（与 MySQL 全量备份目录同级，例如 `.../backups/mysql` → `.../backups/caddy`）；再否则 **`/srv/dinggu-room/backups/caddy`**。勿把该目录提交到 Git。
 2. 预览：`node scripts/rotate-gate-tokens.mjs --dry-run`
-3. 写回：`node scripts/rotate-gate-tokens.mjs --write --env-file /etc/caddy/caddy.env`
+3. 写回：`sudo node scripts/rotate-gate-tokens.mjs --write --env-file /etc/caddy/实际环境文件`（**sudo** 须能读/写环境文件、在备份目录下创建文件）。
 4. `sudo systemctl reload caddy`
 5. 通知运营更新带 `entry_token` 的书签。`*_GATE_TOKEN_OLD` 在窗口期内仍接受旧 token。
 
