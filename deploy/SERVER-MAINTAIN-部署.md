@@ -44,6 +44,14 @@ sudo bash deploy/install-dinngoo-server-maintain-wrappers.sh
 
 升级 nvm 后：同上命令再执行一次。
 
+### 3.1 Caddy 分域（勿长期保留默认「Caddy works!」页）
+
+包管理器自带的 **`/etc/caddy/Caddyfile`** 通常只是 `:80` 演示站点；要让 **`www.dinngoo.com`** 反代到 Next（`127.0.0.1:13000`）等，需按 **`分域部署方案.md`** 落地：
+
+1. **进程环境**：含门禁占位符的 Caddyfile 依赖 **`{$OP_GATE_TOKEN}`** 等。安装脚本会写入 **`/etc/systemd/system/caddy.service.d/env-deploy.conf`**（加载 **`/etc/caddy/env.deploy`**）。请在该文件中配置 token 与 **`MAINT_STATIC_ROOT`**（与 `server-maintain` 的 **`REPORT_DIR`** 一致），权限建议 **`chmod 600`**。**首次创建或修改 env 后请 `sudo systemctl restart caddy`**，再执行 **`sudo dinngoo-caddy-apply`**。
+2. **站点配置**：将 **`templates/Caddyfile.split-domains.example`** 复制为 **`deploy/staging/Caddyfile`**（勿提交 Git），把其中 **`example.com`**、**`maint.dinngoo.xyz`** 等改为实际域名与 **`email`**。若 Caddy 2.6 校验报 **`roll_local_time`**，可删掉各 `log` 块中该行。确保 **`www` / `op` / `maint`** 的 DNS **A/AAAA** 指向本机。
+3. **发布**：**`sudo dinngoo-caddy-apply`**（校验暂存文件、安装到 **`/etc/caddy/Caddyfile`** 并重载）。详见 **`deploy/staging/README.md`**。
+
 ## 4. 日常（运维用户）
 
 **一次性**：配置 **日报（约每日 23:59:59）** 与 **指标采集（约每 10 秒）** 的 cron（写入 `/etc/cron.d/dinngoo-server-maintain`）：

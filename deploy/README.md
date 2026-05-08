@@ -7,7 +7,7 @@
 |------|------|
 | [**分域部署方案.md**](./分域部署方案.md) | C 端 Next + 后台 PHP + Caddy 分域与 `op` 门禁 |
 | [**安全事件排查总结-2026-05-02.md**](./安全事件排查总结-2026-05-02.md) | 备案期安全事件留痕（历史处置细节以正文为准） |
-| [**templates/Caddyfile.split-domains.example**](./templates/Caddyfile.split-domains.example) | Caddy 分域 + 门禁 + 运维静态站 + 访问日志滚动模板 |
+| [**templates/Caddyfile.split-domains.example**](./templates/Caddyfile.split-domains.example) | Caddy 分域 + 门禁 + 运维静态站 + 访问日志滚动模板（生产把 `example.com` 换成实际域即可；Caddy 2.6 若报 `roll_local_time` 可删掉该行） |
 | [**SERVER-MAINTAIN-部署.md**](./SERVER-MAINTAIN-部署.md) | **server-maintain** 新机器：克隆路径、`.env`、**一次安装** sudo 包装与 NOPASSWD |
 | [**install-dinngoo-server-maintain-wrappers.sh**](./install-dinngoo-server-maintain-wrappers.sh) | **零参数**；须在 **`/srv/dinngoo-room/dinngoo-maintain`** 下执行；生成 token 工具 + **`dinngoo-caddy-apply`**（从 [`staging/Caddyfile`](./staging/README.md) 安装系统 Caddy 并 reload） |
 | [**install-dinngoo-maintain-cron.sh**](./install-dinngoo-maintain-cron.sh) | **零参数**、`sudo`；写入 **`/etc/cron.d/dinngoo-server-maintain`**：日报（约 23:59:59）+ 指标（约每 10 秒） |

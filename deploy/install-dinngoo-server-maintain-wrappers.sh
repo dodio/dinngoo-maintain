@@ -136,10 +136,19 @@ visudo -cf "$SUDO_F" || {
 	die "sudoers 语法失败，已删除 $SUDO_F（包装命令仍在 /usr/local/sbin）"
 }
 
+# Caddyfile 中 {$OP_GATE_TOKEN} 等占位符来自**进程环境**；stock Ubuntu unit 不加载 env 文件。
+DROPIN_DIR=/etc/systemd/system/caddy.service.d
+DROPIN="$DROPIN_DIR/env-deploy.conf"
+mkdir -p "$DROPIN_DIR"
+printf '%s\n' '[Service]' 'EnvironmentFile=-/etc/caddy/env.deploy' >"$DROPIN"
+chmod 644 "$DROPIN"
+systemctl daemon-reload || true
+
 echo "完成。运维用户: $RUNAS_USER  node: $NODE_CMD  caddy: $CADDY_CMD"
 echo "  $ROT_WR"
 echo "  $FET_WR"
 echo "  $CAD_WR"
 echo "  $SUDO_F"
 echo "免密 sudo: dinngoo-rotate-gate-tokens、dinngoo-fetch-caddy-gate-tokens、dinngoo-caddy-apply"
+echo "Caddy 环境: $DROPIN → 读取 /etc/caddy/env.deploy（须 chmod 600、含 OP_/MAINT_* token；变更后建议 systemctl restart caddy）"
 echo "Caddyfile 暂存: $DEPLOY_DIR/staging/Caddyfile（见 deploy/staging/README.md）"
