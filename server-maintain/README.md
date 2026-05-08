@@ -62,16 +62,31 @@ HTTP 访问量仍以 **Caddy JSON 访问日志**为主；本脚本侧重**容器
 
 本机复现：`cd` 到 `server-maintain` 后加载 `.env`，再执行同一命令（不加 cron），一般能立刻看到报错原因（缺环境变量、无权限读 Caddy 日志、MySQL 连不上等）。
 
-### Cron 示例（UTC+8 每日 0:20 跑昨日日报）
+### Cron：推荐一键安装（`/etc/cron.d`）
+
+在 **`/srv/dinngoo-room/dinngoo-maintain`**：
+
+```bash
+sudo bash deploy/install-dinngoo-maintain-cron.sh
+```
+
+会写入 **`/etc/cron.d/dinngoo-server-maintain`**：
+
+- **日报**：`59 23 * * *`（cron 在 **23:59:00** 触发）→ `cron-daily-report-end-of-day.sh` 内 **`sleep 59`** → 约 **23:59:59** 执行，并对**当天**用 `--date $(date +%F)` 生成 HTML（与下文「0:20 昨日」语义不同，见脚本注释）。
+- **指标**：每分钟一次 **`run-metrics-loop-minute.sh`**，分钟内 **6 次** `collect-metrics.mjs`、间隔约 **10 秒**。
+
+日志：`/var/log/maint-report.log`、`/var/log/maint-metrics.log`（安装脚本会 `touch` 并 `chown` 给运维用户）。
+
+### Cron 示例（手动：UTC+8 每日 0:20 跑**昨日**日报）
 
 ```cron
 20 0 * * * cd /srv/dinngoo-room/dinngoo-maintain/server-maintain && set -a && [ -f .env ] && . ./.env && set +a && /usr/bin/node scripts/generate-daily-report.mjs >>/var/log/maint-report.log 2>&1
 ```
 
-### 指标采集（每 10 秒，按负载可调）
+### 指标采集（手动：每 10 秒；或使用 `run-metrics-loop-minute.sh`）
 
 ```cron
-* * * * * for i in 0 1 2 3 4; do sleep 10; cd /srv/dinngoo-room/dinngoo-maintain/server-maintain && set -a && [ -f .env ] && . ./.env && set +a && /usr/bin/node scripts/collect-metrics.mjs >>/var/log/maint-metrics.log 2>&1; done
+* * * * * cd /srv/dinngoo-room/dinngoo-maintain/server-maintain && bash scripts/run-metrics-loop-minute.sh >>/var/log/maint-metrics.log 2>&1
 ```
 
 ### MySQL 备份（每日）

@@ -46,6 +46,24 @@ sudo bash deploy/install-dinngoo-server-maintain-wrappers.sh
 
 ## 4. 日常（运维用户）
 
+**一次性**：配置 **日报（约每日 23:59:59）** 与 **指标采集（约每 10 秒）** 的 cron（写入 `/etc/cron.d/dinngoo-server-maintain`）：
+
+```bash
+cd /srv/dinngoo-room/dinngoo-maintain
+sudo bash deploy/install-dinngoo-maintain-cron.sh
+```
+
+说明与手动 crontab 片段见 **`server-maintain/README.md`**。
+
+**整站 Docker（php-server 三服务 + dinngoo-site Next）** 在宿主依次启动：
+
+```bash
+cd /srv/dinngoo-room/dinngoo-maintain
+bash deploy/start-dinngoo-docker-stacks.sh
+```
+
+**轮换门禁 token / 查看当前 token（按需，勿对轮换配 cron）**：
+
 ```bash
 dinngoo-rotate-gate-tokens --write
 dinngoo-fetch-caddy-gate-tokens
