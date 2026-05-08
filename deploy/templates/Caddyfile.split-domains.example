@@ -1,0 +1,63 @@
+{
+	# 全局配置（Ubuntu 自带 Caddy 2.6+ 勿写 auto_https on，见文档）
+	email ops@example.com
+}
+
+(secure_headers) {
+	header {
+		-X-Powered-By
+		-Server
+		X-Frame-Options "SAMEORIGIN"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+	}
+}
+
+# C 端
+www.example.com {
+	import secure_headers
+
+	log {
+		output file /var/log/caddy/www-access.json
+		format json
+	}
+
+	# nextjs compose: 127.0.0.1:13000:3000
+	reverse_proxy 127.0.0.1:13000
+}
+
+# 后台（反代层门禁）
+op.example.com {
+	import secure_headers
+
+	log {
+		output file /var/log/caddy/op-access.json
+		format json
+	}
+
+	# 1) query token 校验通过：发 cookie，并去参重定向
+	@gate_by_query expression `
+		{http.request.uri.query.entry_token} == "{$OP_GATE_TOKEN}" ||
+		("{$OP_GATE_TOKEN_OLD}" != "" && {http.request.uri.query.entry_token} == "{$OP_GATE_TOKEN_OLD}")
+	`
+	handle @gate_by_query {
+		header Set-Cookie "admin_gate={$OP_GATE_TOKEN}; Max-Age=2592000; Path=/; HttpOnly; Secure; SameSite=Lax"
+		redir {path} 302
+	}
+
+	# 2) cookie 合法：放行 + 滑动续期
+	@gate_by_cookie expression `
+		{http.request.cookie.admin_gate} == "{$OP_GATE_TOKEN}" ||
+		("{$OP_GATE_TOKEN_OLD}" != "" && {http.request.cookie.admin_gate} == "{$OP_GATE_TOKEN_OLD}")
+	`
+	handle @gate_by_cookie {
+		header Set-Cookie "admin_gate={$OP_GATE_TOKEN}; Max-Age=2592000; Path=/; HttpOnly; Secure; SameSite=Lax"
+		# php-server compose: 127.0.0.1:18080:80
+		reverse_proxy 127.0.0.1:18080
+	}
+
+	# 3) 未通过门禁：404
+	handle {
+		respond "Not Found" 404
+	}
+}
