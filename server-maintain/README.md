@@ -6,7 +6,7 @@
 
 - Node.js **≥ 18**
 - 日报与指标脚本需在能读 **`/var/log/caddy/`**、写 **`REPORT_DIR`** 的用户下运行（常为 root 或 `adm` 组成员）。
-- Caddy 站点 `maint.*` 的 `MAINT_STATIC_ROOT` 与本目录的 **`REPORT_DIR` 相同**；首次把 [`public/dashboard.html`](./public/dashboard.html) 拷到该目录（与 `metrics.json` 同目录，便于相对路径拉取）。
+- Caddy 站点 **`maint.dinngoo.xyz`**（测试环境运维仪表盘）的 `MAINT_STATIC_ROOT` 与本目录的 **`REPORT_DIR` 相同**；其它环境请与对应 `maint.*` 子域一致。首次把 [`public/dashboard.html`](./public/dashboard.html) 拷到该目录（与 `metrics.json` 同目录，便于相对路径拉取）。
 
 ```bash
 cp public/dashboard.html "$REPORT_DIR/"

@@ -75,9 +75,8 @@ op.example.com {
 }
 
 # 运维：日报 / 指标仪表盘静态站（与 op 相同的 Query + Cookie 门禁模式，独立 cookie 名与 token）
-# 将下面域名改为实际子域；{$MAINT_STATIC_ROOT} 指向宿主机日报输出目录（与 server-maintain 的 REPORT_DIR 一致）。
-# 若需单独子域仅服务仪表盘，可复制本段并修改 server 名。
-maint.example.com {
+# 测试环境：`maint.dinngoo.xyz`。其它部署请改本段 `server` 域名；{$MAINT_STATIC_ROOT} 指向宿主机日报输出目录（与 server-maintain 的 REPORT_DIR 一致）。
+maint.dinngoo.xyz {
 	import secure_headers
 
 	log {
