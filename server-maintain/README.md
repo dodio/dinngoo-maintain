@@ -45,6 +45,7 @@ HTTP 访问量仍以 **Caddy JSON 访问日志**为主；本脚本侧重**容器
 | `npm run metrics` | 写入 `METRICS_JSON_PATH`（默认 `$REPORT_DIR/metrics.json`），供 `dashboard.html` 轮询。 |
 | `bash scripts/mysql-full-backup.sh` | 全量 `mysqldump \| gzip` 到 `BACKUP_DIR`，并按 `BACKUP_KEEP_DAYS` 清理。 |
 | `npm run docker-logs` | 按日筛选 Docker 日志并关键词统计；见上文「Docker 容器日志」。 |
+| `sudo bash scripts/fetch-caddy-gate-tokens.sh` | 在**本机**（Caddy 所在宿主机）用 root 查看 `EnvironmentFile` 中的 **`MAINT_*` / `OP_*`** 行，便于核对书签用的 `entry_token`。 |
 | `npm run rotate-tokens` | **手动**轮换 `MAINT_*` / `OP_*` token；**不要**配 cron。见下方。 |
 
 ### 排障：脚本报错时日志怎么看
