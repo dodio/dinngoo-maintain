@@ -5,6 +5,7 @@
 
 | 文档 | 用途 |
 |------|------|
+| [**服务容器部署文档索引.md**](./服务容器部署文档索引.md) | **php-server / dinngoo-site** 各自 **`deploy/README.md`** 入口；`server-info` 与 `.gitignore` 说明 |
 | [**分域部署方案.md**](./分域部署方案.md) | C 端 Next + 后台 PHP + Caddy 分域与 `op` 门禁 |
 | [**安全事件排查总结-2026-05-02.md**](./安全事件排查总结-2026-05-02.md) | 备案期安全事件留痕（历史处置细节以正文为准） |
 | [**templates/Caddyfile.split-domains.example**](./templates/Caddyfile.split-domains.example) | Caddy 分域 + 门禁 + 运维静态站 + 访问日志滚动模板（生产把 `example.com` 换成实际域即可；Caddy 2.6 若报 `roll_local_time` 可删掉该行） |
