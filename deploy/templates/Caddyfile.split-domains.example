@@ -30,7 +30,9 @@ www.example.com {
 	}
 
 	# nextjs compose: 127.0.0.1:13000:3000
-	reverse_proxy 127.0.0.1:13000
+	reverse_proxy 127.0.0.1:13000 {
+		header_down -X-Powered-By
+	}
 }
 
 # 后台（反代层门禁）
@@ -65,7 +67,9 @@ op.example.com {
 	handle @gate_by_cookie {
 		header Set-Cookie "admin_gate={$OP_GATE_TOKEN}; Max-Age=2592000; Path=/; HttpOnly; Secure; SameSite=Lax"
 		# php-server compose: 127.0.0.1:18080:80
-		reverse_proxy 127.0.0.1:18080
+		reverse_proxy 127.0.0.1:18080 {
+			header_down -X-Powered-By
+		}
 	}
 
 	# 3) 未通过门禁：404
