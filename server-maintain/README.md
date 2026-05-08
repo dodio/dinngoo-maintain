@@ -91,7 +91,7 @@ HTTP 访问量仍以 **Caddy JSON 访问日志**为主；本脚本侧重**容器
 
 1. `--write` 时脚本会先把 **`CADDY_ENV_FILE`** 与 **`/etc/caddy/Caddyfile`**（可用 **`CADDYFILE_PATH`** 覆盖）备份到**宿主机目录**：默认 **`CADDY_ROTATE_BACKUP_DIR`**，未设置时取 **`server-maintain/.env`** 里 **`BACKUP_DIR`** 的**父目录下的 `caddy/`**（与 MySQL 全量备份目录同级，例如 `.../backups/mysql` → `.../backups/caddy`）；再否则 **`/srv/dinggu-room/backups/caddy`**。勿把该目录提交到 Git。
 2. 预览：`node scripts/rotate-gate-tokens.mjs --dry-run`
-3. 写回：`sudo node scripts/rotate-gate-tokens.mjs --write --env-file /etc/caddy/实际环境文件`（**sudo** 须能读/写环境文件、在备份目录下创建文件）。
+3. 写回（**不要用 `sudo node`**，sudo 默认 PATH 里没有 nvm 的 node）：`bash scripts/rotate-gate-tokens.sh --write`（或 `sudo "$(command -v node)" scripts/rotate-gate-tokens.mjs --write`）。可加 `--env-file /etc/caddy/…`。
 4. `sudo systemctl reload caddy`
 5. 通知运营更新带 `entry_token` 的书签。`*_GATE_TOKEN_OLD` 在窗口期内仍接受旧 token。
 

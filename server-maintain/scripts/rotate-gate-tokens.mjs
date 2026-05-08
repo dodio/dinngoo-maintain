@@ -3,6 +3,9 @@
  * OP 与 MAINT 的 *_GATE_TOKEN 须为**不同随机值**，勿复用同一段字符串。
  * 用法:
  *   node scripts/rotate-gate-tokens.mjs [--dry-run] [--write] [--maint-only] [--op-only]
+ * 需 root 写 /etc 时不要用「sudo node…」 alone（sudo 下常找不到 nvm 的 node），应：
+ *   bash scripts/rotate-gate-tokens.sh --write
+ *   或 sudo "$(command -v node)" scripts/rotate-gate-tokens.mjs --write
  * 环境变量 CADDY_ENV_FILE=/etc/caddy/caddy.env
  * --write 前会自动拷贝 Caddy EnvironmentFile 与 Caddyfile 到**宿主机备份目录**（见下方
  * CADDY_ROTATE_BACKUP_DIR / BACKUP_DIR），与数据库全量备份同级侧存放、不写入 Git 仓库。

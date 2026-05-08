@@ -9,6 +9,7 @@
     "report": "node scripts/generate-daily-report.mjs",
     "metrics": "node scripts/collect-metrics.mjs",
     "docker-logs": "node scripts/analyze-docker-logs.mjs",
-    "rotate-tokens": "node scripts/rotate-gate-tokens.mjs"
+    "rotate-tokens": "node scripts/rotate-gate-tokens.mjs",
+    "rotate-tokens:sudo": "bash scripts/rotate-gate-tokens.sh"
   }
 }
