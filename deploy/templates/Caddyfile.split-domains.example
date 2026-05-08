@@ -105,7 +105,8 @@ maint.dinngoo.xyz {
 	handle @maint_gate_by_cookie {
 		header Set-Cookie "maint_gate={$MAINT_GATE_TOKEN}; Max-Age=2592000; Path=/; HttpOnly; Secure; SameSite=Lax"
 		root * {$MAINT_STATIC_ROOT}
-		file_server
+		# 启用目录列表：运维静态站有 entry_token + cookie，便于点选 daily-*.html / dashboard.html
+		file_server browse
 	}
 
 	handle {
