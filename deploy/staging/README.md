@@ -16,3 +16,5 @@ sudo dinngoo-caddy-apply
 2. 若 **未放置暂存文件**（例如仅轮换过 `env.deploy`）：对 **当前** `/etc/caddy/Caddyfile` 校验后 **reload**。
 
 **不**在此目录放口令；`env.deploy` 仍由你在服务器上用 **`sudo`** 维护，或通过既有的 token 轮换脚本写回。
+
+**maint** 静态站在范例中已使用 **`file_server browse`**（目录列表）：整站仍有 **entry_token + `maint_gate` cookie**，访问时请直接打开带后缀的路径，例如 **`/dashboard.html`**、**`/daily-YYYY-MM-DD.html`**。
