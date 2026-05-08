@@ -171,7 +171,7 @@ function main() {
     dbBackupError,
   };
 
-  const tmp = `${metricsPath}.$$.tmp`;
+  const tmp = `${metricsPath}.${process.pid}.${Date.now()}.tmp`;
   const json = `${JSON.stringify(payload, null, 0)}\n`;
   writeFileSync(tmp, json, "utf8");
   renameSync(tmp, metricsPath);
