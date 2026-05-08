@@ -26,7 +26,8 @@ cd dinngoo-maintain/server-maintain
 
 ```bash
 cp env.example .env
-# 编辑 .env；可选：python3 scripts/sync-mysql-password-from-php-server.py
+# 编辑 .env。若使用 dinngoo-rotate-gate-tokens --write，请保留 CADDY_ENV_FILE=/etc/caddy/env.deploy（与 Caddy systemd 一致）。
+# 可选：python3 scripts/sync-mysql-password-from-php-server.py
 ```
 
 ## 3. sudo 包装 + 免密（无需参数）
@@ -70,7 +71,8 @@ cd /srv/dinngoo-room/dinngoo-maintain
 bash deploy/start-dinngoo-docker-stacks.sh
 ```
 
-**轮换门禁 token / 查看当前 token（按需，勿对轮换配 cron）**：
+**轮换门禁 token / 查看当前 token（按需，勿对轮换配 cron）**  
+依赖 **`server-maintain/.env`** 中的 **`CADDY_ENV_FILE`**（通常为 **`/etc/caddy/env.deploy`**；脚本在未设置时若该路径文件存在也会自动使用）。**`--write`** 前请确认该文件已存在且 Caddy 已在使用：
 
 ```bash
 dinngoo-rotate-gate-tokens --write

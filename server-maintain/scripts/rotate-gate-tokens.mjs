@@ -5,7 +5,8 @@
  *   dinngoo-rotate-gate-tokens [--dry-run] [--write] ...
  *   仓库内: bash scripts/rotate-gate-tokens.sh （等同 sudo 包装命令）
  * 见 deploy/SERVER-MAINTAIN-部署.md
- * 环境变量 CADDY_ENV_FILE=/etc/caddy/caddy.env
+ * 环境变量 **CADDY_ENV_FILE**（建议 **`/etc/caddy/env.deploy`**，与 systemd 的 EnvironmentFile 一致；
+ * 未设置时若该文件存在则自动使用）。也可用 **`--env-file /path`** 覆盖。
  * --write 前会自动拷贝 Caddy EnvironmentFile 与 Caddyfile 到**宿主机备份目录**（见下方
  * CADDY_ROTATE_BACKUP_DIR / BACKUP_DIR），与数据库全量备份同级侧存放、不写入 Git 仓库。
  * 可选 CADDYFILE_PATH 覆盖默认的 /etc/caddy/Caddyfile（不存在则跳过备份）。
@@ -149,11 +150,15 @@ function backupCaddyArtifacts(envFilePath) {
 }
 
 function main() {
-  const { dryRun, write, maintOnly, opOnly, envFile } = parseArgs(
+  let { dryRun, write, maintOnly, opOnly, envFile } = parseArgs(
     process.argv.slice(2),
   );
 
-  const filePath = envFile ? resolve(envFile) : "";
+  let eff = (envFile || "").trim();
+  if (!eff && existsSync("/etc/caddy/env.deploy")) {
+    eff = "/etc/caddy/env.deploy";
+  }
+  const filePath = eff ? resolve(eff) : "";
   const existing = filePath ? readEnvMap(filePath) : {};
 
   const updates = {};
@@ -245,7 +250,11 @@ function main() {
   }
 
   if (!filePath || !existsSync(filePath)) {
-    console.error("未找到 CADDY_ENV_FILE 或文件不存在:", filePath);
+    console.error(
+      "未找到 CADDY_ENV_FILE 或文件不存在:",
+      filePath || "(空)",
+      "\n请在 server-maintain/.env 设置 CADDY_ENV_FILE=/etc/caddy/env.deploy（或先创建该文件并 chmod 600），或使用 --env-file /path。",
+    );
     process.exit(1);
   }
 

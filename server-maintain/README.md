@@ -109,7 +109,8 @@ sudo bash deploy/install-dinngoo-maintain-cron.sh
 
 - 预览：`npm run rotate-tokens -- --dry-run` 或 `node scripts/rotate-gate-tokens.mjs --dry-run`
 - 写回（**sudo 下含正确 node**）：`bash scripts/rotate-gate-tokens.sh --write` 或 `dinngoo-rotate-gate-tokens --write`
-- `--write` 会先备份 Caddy 环境文件与 Caddyfile，再写 `CADDY_ENV_FILE`；然后 **`sudo dinngoo-caddy-apply`**（校验并重载 Caddy），并通知更新带 `entry_token` 的书签。
+- **`server-maintain/.env`** 须设 **`CADDY_ENV_FILE=/etc/caddy/env.deploy`**（与安装脚本写入的 systemd **`EnvironmentFile`** 一致；未设置时，若该文件已存在脚本会自动选用）。
+- `--write` 会先备份 Caddy 环境文件与 Caddyfile，再写 `CADDY_ENV_FILE` 指向的文件；然后 **`sudo dinngoo-caddy-apply`**（校验并重载 Caddy），并通知更新带 `entry_token` 的书签。
 
 `--maint-only` / `--op-only` 可用。详见 `scripts/rotate-gate-tokens.mjs` 头注释。
 
