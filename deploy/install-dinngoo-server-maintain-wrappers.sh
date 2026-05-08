@@ -60,8 +60,19 @@ fi
 
 [[ -n "$NODE_CMD" && -x "$NODE_CMD" ]] || die "未找到可执行的 node（已为 $RUNAS_USER 尝试 login shell、~/.nvm、/usr/bin/node）。请在该用户下安装 Node ≥18。"
 
+CADDY_CMD=""
+if [[ -x /usr/bin/caddy ]]; then
+	CADDY_CMD=/usr/bin/caddy
+elif [[ -x /usr/local/bin/caddy ]]; then
+	CADDY_CMD=/usr/local/bin/caddy
+elif tmp="$(command -v caddy 2>/dev/null)" && [[ -x "$tmp" ]]; then
+	CADDY_CMD="$tmp"
+fi
+[[ -n "$CADDY_CMD" ]] || die "未找到可执行的 caddy（常见为 /usr/bin/caddy）。请先 apt install caddy 后再执行本安装脚本。"
+
 ROT_WR=/usr/local/sbin/dinngoo-rotate-gate-tokens
 FET_WR=/usr/local/sbin/dinngoo-fetch-caddy-gate-tokens
+CAD_WR=/usr/local/sbin/dinngoo-caddy-validate-reload
 SUDO_F=/etc/sudoers.d/dinngoo-server-maintain
 
 printf '%s\n' '#!/bin/sh' "exec $(printf '%q' "$NODE_CMD") $(printf '%q' "$MJS") \"\$@\"" >"$ROT_WR"
@@ -70,10 +81,19 @@ chmod 755 "$ROT_WR"
 printf '%s\n' '#!/bin/sh' "exec /bin/bash $(printf '%q' "$FETCH") \"\$@\"" >"$FET_WR"
 chmod 755 "$FET_WR"
 
+# 仅 validate + reload，不授予任意修改 /etc/caddy 的免密（编辑仍须 sudo vim 等）。
+{
+	printf '%s\n' '#!/bin/sh' 'set -e' \
+		"$(printf '%q' "$CADDY_CMD") validate --config /etc/caddy/Caddyfile" \
+		'exec /bin/systemctl reload caddy'
+} >"$CAD_WR"
+chmod 755 "$CAD_WR"
+
 {
 	echo "# 由 install-dinngoo-server-maintain-wrappers.sh 生成；升级 nvm 后可再次「sudo bash deploy/install-dinngoo-server-maintain-wrappers.sh」"
 	echo "$RUNAS_USER ALL=(root) NOPASSWD: $ROT_WR"
 	echo "$RUNAS_USER ALL=(root) NOPASSWD: $FET_WR"
+	echo "$RUNAS_USER ALL=(root) NOPASSWD: $CAD_WR"
 } >"$SUDO_F"
 chmod 440 "$SUDO_F"
 
@@ -82,8 +102,9 @@ visudo -cf "$SUDO_F" || {
 	die "sudoers 语法失败，已删除 $SUDO_F（包装命令仍在 /usr/local/sbin）"
 }
 
-echo "完成。运维用户: $RUNAS_USER  node: $NODE_CMD"
+echo "完成。运维用户: $RUNAS_USER  node: $NODE_CMD  caddy: $CADDY_CMD"
 echo "  $ROT_WR"
 echo "  $FET_WR"
+echo "  $CAD_WR"
 echo "  $SUDO_F"
-echo "免密: dinngoo-rotate-gate-tokens、dinngoo-fetch-caddy-gate-tokens"
+echo "免密 sudo: dinngoo-rotate-gate-tokens、dinngoo-fetch-caddy-gate-tokens、dinngoo-caddy-validate-reload"

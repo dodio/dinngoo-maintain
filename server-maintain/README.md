@@ -48,6 +48,7 @@ HTTP 访问量仍以 **Caddy JSON 访问日志**为主；本脚本侧重**容器
 | `python3 scripts/sync-mysql-password-from-php-server.py` | **在 Caddy/备份所在宿主机上**运行：从 `/srv/dinngoo-room/php-server/.env` 读取 **`MYSQL_PASSWORD`** 写入本目录 **`.env`**（不打印密码）。首次部署或改过 php-server 口令后可再跑一次。 |
 | `bash scripts/rotate-gate-tokens.sh` | 等同 `sudo dinngoo-rotate-gate-tokens`（需先执行 [`deploy/install-dinngoo-server-maintain-wrappers.sh`](../deploy/install-dinngoo-server-maintain-wrappers.sh)） |
 | `dinngoo-fetch-caddy-gate-tokens` | 查看 `EnvironmentFile` 中 `MAINT_*` / `OP_*`（安装包装后免密） |
+| **`sudo dinngoo-caddy-validate-reload`** | 对已保存的 **`/etc/caddy/Caddyfile`** 做 **`caddy validate`** 成功后 **`systemctl reload caddy`**（安装包装后免密；**不**含编辑系统文件） |
 
 ### 排障：脚本报错时日志怎么看
 
@@ -93,7 +94,7 @@ HTTP 访问量仍以 **Caddy JSON 访问日志**为主；本脚本侧重**容器
 
 - 预览：`npm run rotate-tokens -- --dry-run` 或 `node scripts/rotate-gate-tokens.mjs --dry-run`
 - 写回（**sudo 下含正确 node**）：`bash scripts/rotate-gate-tokens.sh --write` 或 `dinngoo-rotate-gate-tokens --write`
-- `--write` 会先备份 Caddy 环境文件与 Caddyfile，再写 `CADDY_ENV_FILE`；然后 `sudo systemctl reload caddy`，并通知更新带 `entry_token` 的书签。
+- `--write` 会先备份 Caddy 环境文件与 Caddyfile，再写 `CADDY_ENV_FILE`；然后 **`sudo dinngoo-caddy-validate-reload`**（或 `sudo systemctl reload caddy`），并通知更新带 `entry_token` 的书签。
 
 `--maint-only` / `--op-only` 可用。详见 `scripts/rotate-gate-tokens.mjs` 头注释。
 

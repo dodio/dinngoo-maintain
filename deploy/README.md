@@ -9,7 +9,7 @@
 | [**安全事件排查总结-2026-05-02.md**](./安全事件排查总结-2026-05-02.md) | 备案期安全事件留痕（历史处置细节以正文为准） |
 | [**templates/Caddyfile.split-domains.example**](./templates/Caddyfile.split-domains.example) | Caddy 分域 + 门禁 + 运维静态站 + 访问日志滚动模板 |
 | [**SERVER-MAINTAIN-部署.md**](./SERVER-MAINTAIN-部署.md) | **server-maintain** 新机器：克隆路径、`.env`、**一次安装** sudo 包装与 NOPASSWD |
-| [**install-dinngoo-server-maintain-wrappers.sh**](./install-dinngoo-server-maintain-wrappers.sh) | **零参数**；须在 **`/srv/dinngoo-room/dinngoo-maintain`** 下执行 |
+| [**install-dinngoo-server-maintain-wrappers.sh**](./install-dinngoo-server-maintain-wrappers.sh) | **零参数**；须在 **`/srv/dinngoo-room/dinngoo-maintain`** 下执行；生成 token 工具 + **`dinngoo-caddy-validate-reload`**（免密 validate + reload） |
 | [**sudoers.d-dinngoo-server-maintain.example**](./sudoers.d-dinngoo-server-maintain.example) | NOPASSWD 条目说明（**不必手填**，以安装脚本生成为准） |
 | [**server-maintain/**](../server-maintain/README.md) | 日报 / 指标 JSON / MySQL 全量备份 / Docker 日志扫描 / 手动轮换 token |
 

@@ -225,7 +225,7 @@ function main() {
   if (dryRun) {
     console.log("\n[dry-run] 未写文件。去掉 --dry-run 并加 --write 以写回 CADDY_ENV_FILE。");
     console.log(
-      "轮换后请: sudo systemctl reload caddy（或你的 reload 命令），并通知运营更新带 entry_token 的入口链接。",
+      "轮换后请: sudo dinngoo-caddy-validate-reload（或 sudo systemctl reload caddy），并通知运营更新带 entry_token 的入口链接。",
     );
     return;
   }
@@ -239,7 +239,7 @@ function main() {
       if (m.oldSlot) console.log(`${m.label}_GATE_TOKEN_OLD=${m.oldSlot}`);
     }
     console.log(
-      "\n轮换后请: sudo systemctl reload caddy，并通知运营更新书签。",
+      "\n轮换后请: sudo dinngoo-caddy-validate-reload，并通知运营更新书签。",
     );
     return;
   }
@@ -254,7 +254,7 @@ function main() {
   const after = patchEnvLines(before, updates);
   writeFileSync(filePath, after, "utf8");
   console.log("已更新", filePath);
-  console.log("请执行: sudo systemctl reload caddy");
+  console.log("请执行: sudo dinngoo-caddy-validate-reload");
 }
 
 main();

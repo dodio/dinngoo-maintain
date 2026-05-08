@@ -1,7 +1,9 @@
 # 由「sudo bash deploy/install-dinngoo-server-maintain-wrappers.sh」自动生成到
-# /etc/sudoers.d/dinngoo-server-maintain ，无需手抄。典型为两行 NOPASSWD：
+# /etc/sudoers.d/dinngoo-server-maintain ，无需手抄。典型为三行 NOPASSWD：
 #
 #   <运维用户> ALL=(root) NOPASSWD: /usr/local/sbin/dinngoo-rotate-gate-tokens
 #   <运维用户> ALL=(root) NOPASSWD: /usr/local/sbin/dinngoo-fetch-caddy-gate-tokens
+#   <运维用户> ALL=(root) NOPASSWD: /usr/local/sbin/dinngoo-caddy-validate-reload
 #
+# dinngoo-caddy-validate-reload：固定执行 caddy validate + systemctl reload caddy（不授予改写 /etc/caddy 的免密）。
 # 校验：sudo visudo -cf /etc/sudoers.d/dinngoo-server-maintain
