@@ -128,6 +128,32 @@ function getHost(entry) {
   return h || "(无 Host)";
 }
 
+/**
+ * 静态资源路径：Top 路径表排除（仅路径段，不含 query）。
+ * 含常见扩展名、Next 静态目录、部分固定文件名。
+ */
+function isStaticAssetPath(path) {
+  if (!path || typeof path !== "string") return false;
+  const p = path.trim().toLowerCase();
+  if (
+    p.includes("/_next/static/") ||
+    p.includes("/_next/image") ||
+    (p.includes("/static/") && /\.(?:js|css|png|jpe?g|gif|webp|svg|ico|woff2?)$/i.test(p))
+  ) {
+    return true;
+  }
+  if (
+    p === "/favicon.ico" ||
+    p === "/robots.txt" ||
+    p.endsWith("/favicon.ico")
+  ) {
+    return true;
+  }
+  return /\.(?:js|mjs|cjs|css|map|png|jpe?g|gif|webp|svg|ico|bmp|avif|woff2?|ttf|eot|otf|mp4|webm|mp3|wav|ogg|pdf|zip|gz)$/i.test(
+    p,
+  );
+}
+
 async function readLinesMatchingDay(files, startMs, endMs, onEntry) {
   let linesOk = 0;
   let parseErr = 0;
@@ -267,6 +293,8 @@ function aggregateStream(name) {
   const byStatus = makeCounter();
   const byPath = makeCounter();
   const byIp404 = makeCounter();
+  /** @type {Set<string>} */
+  const uniqueIps = new Set();
   let n = 0;
   let n5 = 0;
   let n4 = 0;
@@ -287,13 +315,17 @@ function aggregateStream(name) {
       const st = getStatus(entry);
       const uri = getUri(entry);
       const ip = getClientIp(entry);
+      const ipKey = String(ip || "unknown").trim() || "unknown";
+      uniqueIps.add(ipKey);
       const tsMs = tsToMs(entry.ts) ?? 0;
       byStatus.add(String(st));
       n++;
       if (st >= 500) n5++;
       if (st >= 400 && st < 500) n4++;
       const pathOnly = (uri.split("?")[0] || uri).split("#")[0] || "/";
-      byPath.add(pathOnly);
+      if (!isStaticAssetPath(pathOnly)) {
+        byPath.add(pathOnly);
+      }
 
       if (st === 404) byIp404.add(ip);
 
@@ -352,6 +384,8 @@ function aggregateStream(name) {
       return {
         name,
         total: n,
+        pv: n,
+        uv: uniqueIps.size,
         error5xx: n5,
         error5xxRate: n ? n5 / n : 0,
         client4xx: n4,
@@ -510,6 +544,8 @@ async function main() {
     dockerLogSnippets,
     notes: [
       "HTTP 统计来自 Caddy JSON；顶栏「统计范围」可切换到单个 Host，卡片与图表按该域名过滤。",
+      "PV = 访问日志条数（当日该范围内）；UV = 去重客户端 IP（无法识别时为 unknown）。",
+      "Top 路径已排除静态资源（js/css/图片/字体、/_next/static/ 等）；非正常状态路径仍含静态以便排查。",
       "非正常状态码路径来自访问日志（≥400 或小于 200）；明细表为抽样行，非全量。",
       "Caddy 访问日志通常不含 PHP/Node 堆栈；需在 .env 开启 REPORT_ATTACH_DOCKER_LOGS=1 并配置 REPORT_DOCKER_LOG_SERVICES 才附录 docker logs 摘录。",
       "嗅探路径为 URI 子串启发式规则，与脚本内 PROBE 列表一致。",

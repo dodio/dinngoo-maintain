@@ -133,6 +133,12 @@
       <span class="notes">当前：<strong id="scope-current-label">—</strong></span>
     </div>
 
+    <section>
+      <h2>各域名 PV / UV</h2>
+      <p class="notes">PV = 当日该 Host 访问日志条数（含静态资源）；UV = 去重客户端 IP；与下方「统计范围」筛选无关，便于总览。</p>
+      <div class="card" style="padding:0;overflow:hidden;"><table id="tbl-host-pv-uv"><thead><tr><th>域名</th><th class="num">PV</th><th class="num">UV</th></tr></thead><tbody></tbody></table></div>
+    </section>
+
     <div class="grid" id="summary-cards"></div>
 
     <section>
@@ -152,6 +158,7 @@
 
     <section>
       <h2>Top 路径（当前范围）</h2>
+      <p class="notes">已排除静态资源请求（如 .js / .css / 图片 / 字体、<code>/_next/static/</code>、<code>favicon.ico</code> 等），便于查看页面/API 路径。</p>
       <div class="card" style="padding:0;overflow:hidden;"><table id="tbl-paths"><thead><tr><th>路径</th><th class="num">次数</th></tr></thead><tbody></tbody></table></div>
     </section>
 
@@ -202,6 +209,8 @@
       function emptySnap() {
         return {
           total: 0,
+          pv: 0,
+          uv: 0,
           error5xx: 0,
           error5xxRate: 0,
           client4xx: 0,
@@ -236,6 +245,43 @@
           if (!el || !window.Chart || typeof Chart.getChart !== 'function') return;
           const ch = Chart.getChart(el);
           if (ch) ch.destroy();
+        });
+      }
+
+      function fillHostPvUvTable() {
+        var tb = document.querySelector('#tbl-host-pv-uv tbody');
+        if (!tb) return;
+        tb.innerHTML = '';
+        var merged = d.merged || {};
+        var trM = document.createElement('tr');
+        var tdM0 = document.createElement('td');
+        tdM0.textContent = '∗ 合计（合并 www + op）';
+        var tdM1 = document.createElement('td');
+        tdM1.textContent = String(merged.pv != null ? merged.pv : merged.total || 0);
+        tdM1.className = 'num';
+        var tdM2 = document.createElement('td');
+        tdM2.textContent = String(merged.uv != null ? merged.uv : 0);
+        tdM2.className = 'num';
+        trM.appendChild(tdM0);
+        trM.appendChild(tdM1);
+        trM.appendChild(tdM2);
+        tb.appendChild(trM);
+
+        (d.hostOrder || []).forEach(function (h) {
+          var s = (d.perHost && d.perHost[h]) || {};
+          var tr = document.createElement('tr');
+          var td0 = document.createElement('td');
+          td0.textContent = h;
+          var td1 = document.createElement('td');
+          td1.textContent = String(s.pv != null ? s.pv : s.total || 0);
+          td1.className = 'num';
+          var td2 = document.createElement('td');
+          td2.textContent = String(s.uv != null ? s.uv : 0);
+          td2.className = 'num';
+          tr.appendChild(td0);
+          tr.appendChild(td1);
+          tr.appendChild(td2);
+          tb.appendChild(tr);
         });
       }
 
@@ -434,7 +480,8 @@
           cards.appendChild(el);
         }
 
-        card('请求数', (m.total || 0).toLocaleString());
+        card('PV', (Number(m.pv != null ? m.pv : m.total) || 0).toLocaleString(), '访问日志条数');
+        card('UV（独立 IP）', (Number(m.uv != null ? m.uv : 0) || 0).toLocaleString(), '当日去重客户端 IP');
         card('5xx 次数 / 占比', (m.error5xx || 0) + ' / ' + pct(m.error5xxRate || 0), m.error5xx ? 'err' : '');
         card('4xx 次数 / 占比', (m.client4xx || 0) + ' / ' + pct(m.client4xxRate || 0), m.client4xx ? 'warn' : '');
         card('嗅探启发式命中', (m.probeHits || 0).toLocaleString(), m.probeHits ? 'warn' : '');
@@ -455,6 +502,8 @@
         fillAnomalies(m);
       }
 
+      fillHostPvUvTable();
+
       const sel = document.getElementById('scope-host');
       sel.innerHTML = '';
       const o0 = document.createElement('option');
@@ -465,7 +514,9 @@
         const snap = (d.perHost && d.perHost[h]) || {};
         const o = document.createElement('option');
         o.value = h;
-        o.textContent = h + '（' + (snap.total || 0).toLocaleString() + '）';
+        var pv = snap.pv != null ? snap.pv : snap.total || 0;
+        var uv = snap.uv != null ? snap.uv : 0;
+        o.textContent = h + '（PV ' + pv.toLocaleString() + ' · UV ' + uv.toLocaleString() + '）';
         sel.appendChild(o);
       });
       sel.addEventListener('change', renderScope);
