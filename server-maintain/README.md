@@ -24,6 +24,8 @@ export SERVER_MAINTAIN_ENV=/path/to/.env
 
 Caddy 日志按**大小**滚动即可；日报脚本根据每行 JSON 的 **`ts`** 过滤到报表日（本地时区或 `TZ`），不要求一天一个日志文件。
 
+日报 HTML 顶栏可按 **`request.host`** 切换「全部合并」或单个域名：卡片（请求数、5xx/4xx、嗅探）、状态图、Top 路径、404 IP、嗅探表、**非正常状态路径**与**异常请求明细**均随当前 Host 过滤。`www` / `op` **行命中**仅在合并模式下有意义。可选在 `.env` 设置 **`REPORT_ATTACH_DOCKER_LOGS=1`** 与 **`REPORT_DOCKER_LOG_SERVICES`**，在报表日内按关键词从 **`docker logs`** 摘录 PHP/Node 等错误行（访问日志本身通常不含堆栈）。
+
 ## Docker 容器日志
 
 生产 Compose 默认 **`logging.driver: json-file`**（`max-size` / `max-file`，便于本机 `docker logs` 与直接读 `*-json.log`）。

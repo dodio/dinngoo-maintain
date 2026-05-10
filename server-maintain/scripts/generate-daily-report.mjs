@@ -6,6 +6,7 @@
  * 报表日区间: 当日 00:00:00.000 ～ 23:59:59.999（与 --date 指定日一致），与脚本在凌晨何时运行无关。
  */
 
+import { execSync } from "node:child_process";
 import { createReadStream } from "node:fs";
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { createInterface } from "node:readline";
@@ -84,6 +85,11 @@ function getUri(entry) {
   if (r && typeof r.uri === "string") return r.uri;
   if (typeof entry.uri === "string") return entry.uri;
   return "";
+}
+
+function getMethod(entry) {
+  const r = entry.request;
+  return r && typeof r.method === "string" ? r.method : "";
 }
 
 function getClientIp(entry) {
@@ -261,13 +267,19 @@ function aggregateStream(name) {
   const byStatus = makeCounter();
   const byPath = makeCounter();
   const byIp404 = makeCounter();
-  const byHost = makeCounter();
-  const byHost5xx = makeCounter();
   let n = 0;
   let n5 = 0;
   let n4 = 0;
   let probeHits = 0;
   const probeByPath = makeCounter();
+  /** @type {Record<number, ReturnType<typeof makeCounter>>} */
+  const abnormalPathByStatus = {};
+  /** @type {Array<{ tsMs: number, host: string, method: string, uri: string, status: number, duration: number | null, clientIp: string, msg: string }>} */
+  const anomalyBuffer = [];
+
+  const MAX_COLLECT = Number(process.env.REPORT_ANOMALY_MAX_COLLECT || 12000);
+  const MAX_OUT = Number(process.env.REPORT_ANOMALY_MAX_ROWS || 350);
+  const ABNORMAL_TOP_PATHS = Number(process.env.REPORT_ABNORMAL_TOP_PATHS || 25);
 
   return {
     name,
@@ -275,16 +287,13 @@ function aggregateStream(name) {
       const st = getStatus(entry);
       const uri = getUri(entry);
       const ip = getClientIp(entry);
-      const host = getHost(entry);
+      const tsMs = tsToMs(entry.ts) ?? 0;
       byStatus.add(String(st));
       n++;
       if (st >= 500) n5++;
       if (st >= 400 && st < 500) n4++;
-      const pathOnly = uri.split("?")[0] || uri;
-      byPath.add(pathOnly.split("#")[0] || "/");
-
-      byHost.add(host);
-      if (st >= 500) byHost5xx.add(host);
+      const pathOnly = (uri.split("?")[0] || uri).split("#")[0] || "/";
+      byPath.add(pathOnly);
 
       if (st === 404) byIp404.add(ip);
 
@@ -294,16 +303,52 @@ function aggregateStream(name) {
           probeByPath.add(p);
         }
       }
+
+      if (
+        (st >= 400 || st < 200 || st === 0) &&
+        anomalyBuffer.length < MAX_COLLECT
+      ) {
+        if (!abnormalPathByStatus[st]) abnormalPathByStatus[st] = makeCounter();
+        abnormalPathByStatus[st].add(pathOnly);
+        let duration = null;
+        if (typeof entry.duration === "number") duration = entry.duration;
+        else if (typeof entry.latency === "number") duration = entry.latency;
+        anomalyBuffer.push({
+          tsMs,
+          host: getHost(entry),
+          method: getMethod(entry),
+          uri: uri.slice(0, 2048),
+          status: st,
+          duration,
+          clientIp: ip,
+          msg:
+            typeof entry.msg === "string"
+              ? entry.msg.slice(0, 500)
+              : typeof entry.err === "string"
+                ? entry.err.slice(0, 500)
+                : "",
+        });
+      }
     },
     snapshot() {
-      const topHostEntries = topN(byHost.entries, 40);
-      const host5xxMap = byHost5xx.entries;
-      const topHostsDetail = topHostEntries.map(([host, count]) => ({
-        host,
-        count,
-        pct: n ? count / n : 0,
-        error5xx: host5xxMap[host] || 0,
-      }));
+      /** @type {Record<string, Record<string, number>>} */
+      const abnormalTopPaths = {};
+      for (const [code, ctr] of Object.entries(abnormalPathByStatus)) {
+        abnormalTopPaths[code] = Object.fromEntries(
+          topN(ctr.entries, ABNORMAL_TOP_PATHS),
+        );
+      }
+
+      const anomalyRowsSorted = anomalyBuffer
+        .slice()
+        .sort((a, b) => {
+          const pa = a.status >= 500 ? 0 : a.status >= 400 ? 1 : 2;
+          const pb = b.status >= 500 ? 0 : b.status >= 400 ? 1 : 2;
+          if (pa !== pb) return pa - pb;
+          return b.tsMs - a.tsMs;
+        })
+        .slice(0, MAX_OUT);
+
       return {
         name,
         total: n,
@@ -314,15 +359,65 @@ function aggregateStream(name) {
         byStatus: byStatus.entries,
         topPaths: Object.fromEntries(topN(byPath.entries, 25)),
         top404Ips: Object.fromEntries(topN(byIp404.entries, 15)),
-        topHosts: Object.fromEntries(topHostEntries),
-        topHostsDetail,
-        hostError5xxOnly: Object.fromEntries(
-          Object.entries(host5xxMap).filter(([, c]) => c > 0),
-        ),
         probeHits,
         probeByPath: probeByPath.entries,
+        abnormalTopPaths,
+        anomalyRowsSorted,
       };
     },
+  };
+}
+
+/** @param {number} startMs @param {number} endMs */
+function collectDockerLogSnippets(startMs, endMs) {
+  if (process.env.REPORT_ATTACH_DOCKER_LOGS !== "1") return null;
+
+  const raw = process.env.REPORT_DOCKER_LOG_SERVICES || "";
+  const services = raw.split(",").map((s) => s.trim()).filter(Boolean);
+  if (!services.length) return null;
+
+  const since = new Date(startMs).toISOString();
+  const until = new Date(endMs + 1).toISOString();
+  const kw =
+    process.env.REPORT_DOCKER_LOG_GREP ||
+    "Error|ERROR|Fatal|Exception|panic|PHP Fatal|PHP Parse|PHP Warning|stack trace|Unhandled|ECONNREFUSED";
+
+  /** @type {Record<string, string>} */
+  const snippets = {};
+  const timeout = Number(process.env.REPORT_DOCKER_LOG_TIMEOUT_MS || 90000);
+
+  for (let svc of services) {
+    if (!/^[a-zA-Z0-9_.-]+$/.test(svc)) {
+      snippets[svc] = "[跳过] 容器名含非法字符，请在 REPORT_DOCKER_LOG_SERVICES 中使用安全名称。";
+      continue;
+    }
+    try {
+      const text = execSync(
+        `docker logs "${svc}" --since "${since}" --until "${until}" 2>&1`,
+        {
+          encoding: "utf8",
+          maxBuffer: 8 * 1024 * 1024,
+          timeout,
+        },
+      );
+      const lines = text.split("\n");
+      let picked = lines.filter((ln) => new RegExp(kw, "i").test(ln));
+      if (!picked.length) picked = lines.slice(-150);
+      snippets[svc] = picked.slice(-220).join("\n").slice(-16000);
+    } catch (e) {
+      snippets[svc] =
+        "[读取失败] " +
+        String(e?.message || e).slice(0, 900) +
+        "\n（若 Docker 不支持 --until，请升级客户端；或暂时关闭 REPORT_ATTACH_DOCKER_LOGS。）";
+    }
+  }
+
+  return {
+    hint:
+      "以下为报表日时间窗内 docker logs 摘录，并按关键词筛选；无命中时退化为日志尾部。应用完整堆栈请以服务器上 docker logs / compose logs 为准。",
+    since,
+    until,
+    services: snippets,
   };
 }
 
@@ -351,22 +446,55 @@ async function main() {
   const wwwOnly = aggregateStream("www 日志文件");
   const opOnly = aggregateStream("op 日志文件");
 
+  /** @type {Map<string, ReturnType<typeof aggregateStream>>} */
+  const perHost = new Map();
+
+  function feedAll(entry) {
+    merged.feed(entry);
+    const h = getHost(entry);
+    if (!perHost.has(h)) perHost.set(h, aggregateStream(h));
+    perHost.get(h).feed(entry);
+  }
+
   const rw = await readLinesMatchingDay(wwwFiles, start, end, (e) => {
     wwwOnly.feed(e);
-    merged.feed(e);
+    feedAll(e);
   });
   const ro = await readLinesMatchingDay(opFiles, start, end, (e) => {
     opOnly.feed(e);
-    merged.feed(e);
+    feedAll(e);
   });
 
   const auth = scanAuthLog(authPath, { y, m, d });
 
+  /** @type {Record<string, ReturnType<ReturnType<typeof aggregateStream>["snapshot"]>>} */
+  const perHostSnapshots = {};
+  const hostOrder = [...perHost.entries()]
+    .map(([host, agg]) => [host, agg.snapshot()])
+    .sort((a, b) => b[1].total - a[1].total)
+    .map(([host, snap]) => {
+      perHostSnapshots[host] = snap;
+      return host;
+    });
+
+  let dockerLogSnippets = null;
+  try {
+    dockerLogSnippets = collectDockerLogSnippets(start, end);
+  } catch (e) {
+    dockerLogSnippets = {
+      hint: "收集容器日志时异常",
+      error: String(e?.message || e),
+      services: {},
+    };
+  }
+
+  const timezoneHint =
+    Intl.DateTimeFormat().resolvedOptions().timeZone || "local";
+
   const data = {
     reportDate: ymd,
     generatedAt: new Date().toISOString(),
-    timezoneHint:
-      Intl.DateTimeFormat().resolvedOptions().timeZone || "local",
+    timezoneHint,
     logFiles: { www: wwwFiles, op: opFiles },
     lineStats: {
       matchedWww: rw.linesOk,
@@ -376,11 +504,15 @@ async function main() {
     www: wwwOnly.snapshot(),
     op: opOnly.snapshot(),
     merged: merged.snapshot(),
+    perHost: perHostSnapshots,
+    hostOrder,
     sshAuth: auth,
+    dockerLogSnippets,
     notes: [
-      "HTTP 统计来自 Caddy JSON；5xx 视为服务端错误，4xx 含客户端与嗅探常见 404。",
-      "域名维度取自 request.host（已小写并去掉末尾端口）；合并表为按请求量 Top 40。",
-      "嗅探路径为 URI 子串启发式规则，模板内 PROBE 与脚本一致。",
+      "HTTP 统计来自 Caddy JSON；顶栏「统计范围」可切换到单个 Host，卡片与图表按该域名过滤。",
+      "非正常状态码路径来自访问日志（≥400 或小于 200）；明细表为抽样行，非全量。",
+      "Caddy 访问日志通常不含 PHP/Node 堆栈；需在 .env 开启 REPORT_ATTACH_DOCKER_LOGS=1 并配置 REPORT_DOCKER_LOG_SERVICES 才附录 docker logs 摘录。",
+      "嗅探路径为 URI 子串启发式规则，与脚本内 PROBE 列表一致。",
     ],
   };
 

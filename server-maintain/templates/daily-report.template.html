@@ -45,6 +45,22 @@
     }
     header h1 { margin: 0 0 8px; font-size: 28px; font-weight: 700; letter-spacing: -0.3px; }
     header .muted { opacity: 0.85; font-size: 13px; }
+    .toolbar {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 20px;
+    }
+    .toolbar label { font-weight: 600; color: var(--ocean-900); }
+    .toolbar select {
+      min-width: 280px;
+      padding: 10px 12px;
+      font-size: 15px;
+      border-radius: var(--radius-lg);
+      border: 1px solid var(--gray-200);
+      background: #fff;
+    }
     .grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
     .card {
       background: #fff;
@@ -82,17 +98,26 @@
       overflow: hidden;
       box-shadow: var(--shadow-ocean);
     }
-    th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--gray-200); }
+    th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--gray-200); vertical-align: top; }
     th { background: var(--gray-50); font-weight: 600; color: var(--gray-700); }
+    td.uri { word-break: break-all; font-family: ui-monospace, monospace; font-size: 13px; }
+    td.num { text-align: right; font-variant-numeric: tabular-nums; }
     .notes { color: var(--gray-500); font-size: 13px; }
-    pre.sample {
+    pre.sample, pre.docker-snippet {
       background: var(--gray-50);
       padding: 12px;
       border-radius: var(--radius-lg);
       overflow-x: auto;
       font-size: 12px;
       border: 1px solid var(--gray-200);
+      white-space: pre-wrap;
+      word-break: break-word;
     }
+    details.docker-svc { margin-bottom: 12px; }
+    details.docker-svc summary { cursor: pointer; font-weight: 600; color: var(--ocean-600); }
+    .status-badge { font-weight: 700; font-variant-numeric: tabular-nums; }
+    .status-5xx { color: var(--color-error); }
+    .status-4xx { color: var(--color-warning); }
   </style>
 </head>
 <body>
@@ -102,10 +127,17 @@
       <div class="muted">报表日：<strong>__REPORT_DATE__</strong> · 生成时间见页底</div>
     </header>
 
+    <div class="card toolbar">
+      <label for="scope-host">统计范围（Host）</label>
+      <select id="scope-host" aria-label="按域名筛选统计"></select>
+      <span class="notes">当前：<strong id="scope-current-label">—</strong></span>
+    </div>
+
     <div class="grid" id="summary-cards"></div>
 
     <section>
-      <h2>HTTP 状态分布（合并 www + op 日志）</h2>
+      <h2 id="http-section-title">HTTP 状态分布</h2>
+      <p class="notes" id="http-section-note"></p>
       <div class="charts">
         <div class="chart-box"><canvas id="chart-status"></canvas></div>
         <div class="chart-box"><canvas id="chart-class"></canvas></div>
@@ -113,25 +145,36 @@
     </section>
 
     <section>
-      <h2>合并 · 按域名（Host）</h2>
-      <p class="notes">按请求量 Top 40；占比相对合并总请求。5xx 列为该 Host 下服务端错误次数。</p>
-      <div class="card" style="padding:0;overflow:hidden;"><table id="tbl-hosts"><thead><tr><th>域名</th><th>请求数</th><th>占比</th><th>5xx</th></tr></thead><tbody></tbody></table></div>
+      <h2>非正常 HTTP 状态 · 路径 Top（当前范围）</h2>
+      <p class="notes">按状态码分列路径计数（每状态最多 25 条）；当前筛选与顶栏 Host 一致。</p>
+      <div class="card" style="padding:0;overflow:hidden;"><table id="tbl-abnormal-paths"><thead><tr><th>状态码</th><th>路径</th><th class="num">次数</th></tr></thead><tbody></tbody></table></div>
     </section>
 
     <section>
-      <h2>合并 · Top 路径</h2>
-      <div class="card" style="padding:0;overflow:hidden;"><table id="tbl-paths"><thead><tr><th>路径</th><th>次数</th></tr></thead><tbody></tbody></table></div>
+      <h2>Top 路径（当前范围）</h2>
+      <div class="card" style="padding:0;overflow:hidden;"><table id="tbl-paths"><thead><tr><th>路径</th><th class="num">次数</th></tr></thead><tbody></tbody></table></div>
     </section>
 
     <section>
-      <h2>合并 · 404 来源 IP（Top）</h2>
-      <div class="card" style="padding:0;overflow:hidden;"><table id="tbl-404ip"><thead><tr><th>IP</th><th>404 次数</th></tr></thead><tbody></tbody></table></div>
+      <h2>404 来源 IP（Top · 当前范围）</h2>
+      <div class="card" style="padding:0;overflow:hidden;"><table id="tbl-404ip"><thead><tr><th>IP</th><th class="num">404 次数</th></tr></thead><tbody></tbody></table></div>
     </section>
 
     <section>
-      <h2>启发式嗅探命中（URI 子串）</h2>
+      <h2>启发式嗅探命中（URI 子串 · 当前范围）</h2>
       <p class="notes">命中次数为请求条数中包含下列敏感路径子串的计数，仅供参考。</p>
-      <div class="card" style="padding:0;overflow:hidden;"><table id="tbl-probe"><thead><tr><th>子串</th><th>命中</th></tr></thead><tbody></tbody></table></div>
+      <div class="card" style="padding:0;overflow:hidden;"><table id="tbl-probe"><thead><tr><th>子串</th><th class="num">命中</th></tr></thead><tbody></tbody></table></div>
+    </section>
+
+    <section>
+      <h2>访问日志 · 异常请求明细（抽样）</h2>
+      <p class="notes">含 HTTP ≥400、小于 200 或状态为 0 的行；优先列出 5xx，其次按时间倒序。非全量日志。</p>
+      <div class="card" style="padding:0;overflow:hidden;"><table id="tbl-access-anomalies"><thead><tr><th>时间</th><th>Host</th><th>方法</th><th class="uri">URI</th><th class="num">状态</th><th>客户端 IP</th><th>耗时</th><th>备注</th></tr></thead><tbody></tbody></table></div>
+    </section>
+
+    <section>
+      <h2>容器应用日志摘录（可选）</h2>
+      <div id="docker-block"></div>
     </section>
 
     <section>
@@ -151,82 +194,283 @@
   </script>
   <script>
     (function () {
-      const cards = document.getElementById('summary-cards');
-      while (cards.firstChild) cards.removeChild(cards.firstChild);
-
       const d = window.__REPORT__;
       if (!d) return;
 
-      const pct = (x) => (x * 100).toFixed(2) + '%';
-      const m = d.merged || {};
+      const pct = function (x) { return (x * 100).toFixed(2) + '%'; };
 
-      function card(title, html, cls) {
-        const el = document.createElement('div');
-        el.className = 'card';
-        el.innerHTML = '<h3>' + title + '</h3><div class="stat ' + (cls || '') + '">' + html + '</div>';
-        cards.appendChild(el);
+      function emptySnap() {
+        return {
+          total: 0,
+          error5xx: 0,
+          error5xxRate: 0,
+          client4xx: 0,
+          client4xxRate: 0,
+          byStatus: {},
+          topPaths: {},
+          top404Ips: {},
+          probeHits: 0,
+          probeByPath: {},
+          abnormalTopPaths: {},
+          anomalyRowsSorted: [],
+        };
       }
-      card('合并请求数', (m.total || 0).toLocaleString());
-      card('5xx 次数 / 占比', (m.error5xx || 0) + ' / ' + pct(m.error5xxRate || 0), m.error5xx ? 'err' : '');
-      card('4xx 次数 / 占比', (m.client4xx || 0) + ' / ' + pct(m.client4xxRate || 0), m.client4xx ? 'warn' : '');
-      card('嗅探启发式命中', (m.probeHits || 0).toLocaleString(), m.probeHits ? 'warn' : '');
-      card('www 行命中', (d.lineStats && d.lineStats.matchedWww) || 0);
-      card('op 行命中', (d.lineStats && d.lineStats.matchedOp) || 0);
+
+      function currentSnap() {
+        const sel = document.getElementById('scope-host').value;
+        if (sel === '__merged__') return d.merged || emptySnap();
+        if (d.perHost && d.perHost[sel]) return d.perHost[sel];
+        return emptySnap();
+      }
+
+      function formatDuration(v) {
+        if (v == null || v !== v) return '—';
+        if (typeof v === 'number' && v > 0 && v < 60) return (v * 1000).toFixed(2) + ' ms';
+        if (typeof v === 'number') return String(v);
+        return '—';
+      }
+
+      function destroyCharts() {
+        ['chart-status', 'chart-class'].forEach(function (id) {
+          const el = document.getElementById(id);
+          if (!el || !window.Chart || typeof Chart.getChart !== 'function') return;
+          const ch = Chart.getChart(el);
+          if (ch) ch.destroy();
+        });
+      }
 
       function fillTable(id, rows) {
         const tb = document.querySelector('#' + id + ' tbody');
+        if (!tb) return;
         tb.innerHTML = '';
-        rows.forEach(([k, v]) => {
+        rows.forEach(function (pair) {
+          const k = pair[0];
+          const v = pair[1];
           const tr = document.createElement('tr');
           const td0 = document.createElement('td');
           td0.textContent = String(k);
           const td1 = document.createElement('td');
           td1.textContent = String(v);
+          td1.className = 'num';
           tr.appendChild(td0);
           tr.appendChild(td1);
           tb.appendChild(tr);
         });
       }
 
-      function fillHostTable(rows) {
-        const tb = document.querySelector('#tbl-hosts tbody');
+      function fillAbnormalPaths(m) {
+        const tb = document.querySelector('#tbl-abnormal-paths tbody');
         tb.innerHTML = '';
-        (rows || []).forEach(function (row) {
+        const atp = m.abnormalTopPaths || {};
+        const codes = Object.keys(atp).sort(function (a, b) { return Number(a) - Number(b); });
+        const rows = [];
+        codes.forEach(function (code) {
+          Object.entries(atp[code] || {}).forEach(function (pe) {
+            rows.push([code, pe[0], pe[1]]);
+          });
+        });
+        rows.sort(function (a, b) {
+          if (Number(a[0]) !== Number(b[0])) return Number(a[0]) - Number(b[0]);
+          return b[2] - a[2];
+        });
+        rows.forEach(function (r) {
           const tr = document.createElement('tr');
           const td0 = document.createElement('td');
-          td0.textContent = String(row.host);
+          td0.textContent = String(r[0]);
           const td1 = document.createElement('td');
-          td1.textContent = String(row.count);
+          td1.textContent = String(r[1]);
+          td1.className = 'uri';
           const td2 = document.createElement('td');
-          td2.textContent = pct(row.pct || 0);
-          const td3 = document.createElement('td');
-          td3.textContent = String(row.error5xx || 0);
+          td2.textContent = String(r[2]);
+          td2.className = 'num';
           tr.appendChild(td0);
           tr.appendChild(td1);
           tr.appendChild(td2);
-          tr.appendChild(td3);
           tb.appendChild(tr);
         });
       }
 
-      const hostRows = (m.topHostsDetail && m.topHostsDetail.length)
-        ? m.topHostsDetail
-        : Object.entries(m.topHosts || {})
-            .sort(function (a, b) { return b[1] - a[1]; })
-            .map(function ([host, count]) {
-            const tot = m.total || 0;
-            return {
-              host: host,
-              count: count,
-              pct: tot ? count / tot : 0,
-              error5xx: ((m.hostError5xxOnly || {})[host]) || 0,
-            };
-          });
-      fillHostTable(hostRows);
+      function fillAnomalies(m) {
+        const tb = document.querySelector('#tbl-access-anomalies tbody');
+        tb.innerHTML = '';
+        const tz = d.timezoneHint || undefined;
+        const rows = m.anomalyRowsSorted || [];
+        rows.forEach(function (row) {
+          const tr = document.createElement('tr');
+          const tdT = document.createElement('td');
+          tdT.textContent = row.tsMs
+            ? new Date(row.tsMs).toLocaleString('zh-CN', { hour12: false, timeZone: tz })
+            : '—';
+          const tdH = document.createElement('td');
+          tdH.textContent = row.host || '';
+          const tdM = document.createElement('td');
+          tdM.textContent = row.method || '—';
+          const tdU = document.createElement('td');
+          tdU.textContent = row.uri || '';
+          tdU.className = 'uri';
+          const tdS = document.createElement('td');
+          tdS.textContent = String(row.status);
+          tdS.className = 'num status-badge';
+          if (row.status >= 500) tdS.classList.add('status-5xx');
+          else if (row.status >= 400) tdS.classList.add('status-4xx');
+          const tdIp = document.createElement('td');
+          tdIp.textContent = row.clientIp || '';
+          const tdDur = document.createElement('td');
+          tdDur.textContent = formatDuration(row.duration);
+          const tdMsg = document.createElement('td');
+          tdMsg.textContent = row.msg || '';
+          tdMsg.className = 'notes';
+          tr.appendChild(tdT);
+          tr.appendChild(tdH);
+          tr.appendChild(tdM);
+          tr.appendChild(tdU);
+          tr.appendChild(tdS);
+          tr.appendChild(tdIp);
+          tr.appendChild(tdDur);
+          tr.appendChild(tdMsg);
+          tb.appendChild(tr);
+        });
+      }
 
-      fillTable('tbl-paths', Object.entries(m.topPaths || {}));
-      fillTable('tbl-404ip', Object.entries(m.top404Ips || {}));
-      fillTable('tbl-probe', Object.entries(m.probeByPath || {}));
+      function renderCharts(m) {
+        destroyCharts();
+        const byStatus = m.byStatus || {};
+        const labels = Object.keys(byStatus).sort(function (a, b) { return Number(a) - Number(b); });
+        const values = labels.map(function (k) { return byStatus[k]; });
+
+        if (window.Chart && labels.length) {
+          new Chart(document.getElementById('chart-status'), {
+            type: 'bar',
+            data: {
+              labels: labels,
+              datasets: [{
+                label: '请求数',
+                data: values,
+                backgroundColor: 'rgba(0, 144, 179, 0.65)',
+                borderRadius: 8,
+              }],
+            },
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              plugins: { legend: { display: false } },
+            },
+          });
+
+          let ok = 0, c4 = 0, c5 = 0;
+          labels.forEach(function (code, i) {
+            const n = Number(code);
+            const c = values[i];
+            if (n >= 200 && n < 400) ok += c;
+            else if (n >= 400 && n < 500) c4 += c;
+            else if (n >= 500) c5 += c;
+            else ok += c;
+          });
+          new Chart(document.getElementById('chart-class'), {
+            type: 'doughnut',
+            data: {
+              labels: ['2xx/3xx', '4xx', '5xx'],
+              datasets: [{
+                data: [ok, c4, c5],
+                backgroundColor: [
+                  'rgba(16, 185, 129, 0.75)',
+                  'rgba(245, 158, 11, 0.75)',
+                  'rgba(239, 68, 68, 0.75)',
+                ],
+              }],
+            },
+            options: { responsive: true, maintainAspectRatio: false },
+          });
+        }
+      }
+
+      function renderDocker() {
+        const block = document.getElementById('docker-block');
+        const dl = d.dockerLogSnippets;
+        if (!dl || !dl.services || !Object.keys(dl.services).length) {
+          block.innerHTML =
+            '<p class="notes">未附录容器日志。可在 server-maintain/.env 设置 <code>REPORT_ATTACH_DOCKER_LOGS=1</code>，并配置 <code>REPORT_DOCKER_LOG_SERVICES</code>（逗号分隔容器名，与 <code>docker ps</code> 的 Names 一致）。需运行报表的用户具备 <code>docker logs</code> 权限。</p>';
+          return;
+        }
+        let html = '';
+        if (dl.hint) html += '<p class="notes">' + dl.hint + '</p>';
+        if (dl.since && dl.until) {
+          html += '<p class="notes">时间窗：<code>' + dl.since + '</code> ～ <code>' + dl.until + '</code></p>';
+        }
+        if (dl.error) html += '<p class="notes warn">' + String(dl.error) + '</p>';
+        Object.keys(dl.services).forEach(function (svc) {
+          const body = String(dl.services[svc] || '').replace(/</g, '&lt;');
+          html +=
+            '<details class="docker-svc" open>' +
+            '<summary>' + svc.replace(/</g, '&lt;') + '</summary>' +
+            '<pre class="docker-snippet">' + body + '</pre>' +
+            '</details>';
+        });
+        block.innerHTML = html;
+      }
+
+      function renderScope() {
+        const sel = document.getElementById('scope-host').value;
+        const mergedScope = sel === '__merged__';
+        const m = currentSnap();
+
+        document.getElementById('scope-current-label').textContent =
+          mergedScope ? '全部合并（www + op）' : sel;
+
+        document.getElementById('http-section-title').textContent =
+          mergedScope ? 'HTTP 状态分布（合并 www + op）' : 'HTTP 状态分布（Host：' + sel + '）';
+
+        document.getElementById('http-section-note').textContent = mergedScope
+          ? '以下为两条访问日志合并后的状态码分布。'
+          : '以下为该 Host（request.host）下的请求；www/op 行命中数仅在「全部合并」模式下有意义。';
+
+        const cards = document.getElementById('summary-cards');
+        cards.innerHTML = '';
+
+        function card(title, html, cls) {
+          const el = document.createElement('div');
+          el.className = 'card';
+          el.innerHTML = '<h3>' + title + '</h3><div class="stat ' + (cls || '') + '">' + html + '</div>';
+          cards.appendChild(el);
+        }
+
+        card('请求数', (m.total || 0).toLocaleString());
+        card('5xx 次数 / 占比', (m.error5xx || 0) + ' / ' + pct(m.error5xxRate || 0), m.error5xx ? 'err' : '');
+        card('4xx 次数 / 占比', (m.client4xx || 0) + ' / ' + pct(m.client4xxRate || 0), m.client4xx ? 'warn' : '');
+        card('嗅探启发式命中', (m.probeHits || 0).toLocaleString(), m.probeHits ? 'warn' : '');
+
+        if (mergedScope) {
+          card('www 日志行命中', (d.lineStats && d.lineStats.matchedWww) || 0);
+          card('op 日志行命中', (d.lineStats && d.lineStats.matchedOp) || 0);
+        } else {
+          card('www 日志行命中', '—', '');
+          card('op 日志行命中', '—', '');
+        }
+
+        renderCharts(m);
+        fillTable('tbl-paths', Object.entries(m.topPaths || {}));
+        fillTable('tbl-404ip', Object.entries(m.top404Ips || {}));
+        fillTable('tbl-probe', Object.entries(m.probeByPath || {}));
+        fillAbnormalPaths(m);
+        fillAnomalies(m);
+      }
+
+      const sel = document.getElementById('scope-host');
+      sel.innerHTML = '';
+      const o0 = document.createElement('option');
+      o0.value = '__merged__';
+      o0.textContent = '全部合并（www + op）';
+      sel.appendChild(o0);
+      (d.hostOrder || []).forEach(function (h) {
+        const snap = (d.perHost && d.perHost[h]) || {};
+        const o = document.createElement('option');
+        o.value = h;
+        o.textContent = h + '（' + (snap.total || 0).toLocaleString() + '）';
+        sel.appendChild(o);
+      });
+      sel.addEventListener('change', renderScope);
+
+      renderDocker();
 
       const ssh = d.sshAuth || {};
       const sshEl = document.getElementById('ssh-block');
@@ -247,7 +491,7 @@
 
       const ul = document.getElementById('notes-ul');
       ul.innerHTML = '';
-      (d.notes || []).forEach(n => {
+      (d.notes || []).forEach(function (n) {
         const li = document.createElement('li');
         li.textContent = n;
         ul.appendChild(li);
@@ -256,54 +500,7 @@
         '生成时间（UTC）：' + (d.generatedAt || '') + ' · 时区提示：' + (d.timezoneHint || '') +
         ' · 解析错误行数：' + ((d.lineStats && d.lineStats.parseErrors) || 0);
 
-      const byStatus = m.byStatus || {};
-      const labels = Object.keys(byStatus).sort((a,b) => Number(a) - Number(b));
-      const values = labels.map(k => byStatus[k]);
-
-      if (window.Chart && labels.length) {
-        new Chart(document.getElementById('chart-status'), {
-          type: 'bar',
-          data: {
-            labels,
-            datasets: [{
-              label: '请求数',
-              data: values,
-              backgroundColor: 'rgba(0, 144, 179, 0.65)',
-              borderRadius: 8,
-            }],
-          },
-          options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: { legend: { display: false } },
-          },
-        });
-
-        let ok = 0, c4 = 0, c5 = 0;
-        labels.forEach((code, i) => {
-          const n = Number(code);
-          const c = values[i];
-          if (n >= 200 && n < 400) ok += c;
-          else if (n >= 400 && n < 500) c4 += c;
-          else if (n >= 500) c5 += c;
-          else ok += c;
-        });
-        new Chart(document.getElementById('chart-class'), {
-          type: 'doughnut',
-          data: {
-            labels: ['2xx/3xx', '4xx', '5xx'],
-            datasets: [{
-              data: [ok, c4, c5],
-              backgroundColor: [
-                'rgba(16, 185, 129, 0.75)',
-                'rgba(245, 158, 11, 0.75)',
-                'rgba(239, 68, 68, 0.75)',
-              ],
-            }],
-          },
-          options: { responsive: true, maintainAspectRatio: false },
-        });
-      }
+      renderScope();
     })();
   </script>
 </body>
