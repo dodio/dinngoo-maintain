@@ -44,7 +44,7 @@ HTTP 访问量仍以 **Caddy JSON 访问日志**为主；本脚本侧重**容器
 | 脚本 | 说明 |
 |------|------|
 | `npm run report` | 生成 `daily-YYYY-MM-DD.html` 到 `REPORT_DIR`。默认统计「昨天」；`--date YYYY-MM-DD` 或 `REPORT_DATE` 覆盖。 |
-| `npm run metrics` | 写入 `METRICS_JSON_PATH`（默认 `$REPORT_DIR/metrics.json`），供 `dashboard.html` 轮询。 |
+| `npm run metrics` | 写入 `METRICS_JSON_PATH`（默认 `$REPORT_DIR/metrics.json`），供 `dashboard.html` 轮询；含内存、**Linux Swap**（`/proc/meminfo`）、磁盘、`docker stats`、最新备份等。 |
 | `bash scripts/mysql-full-backup.sh` | 全量 `mysqldump \| gzip` 到 `BACKUP_DIR`，并按 `BACKUP_KEEP_DAYS` 清理。 |
 | `npm run docker-logs` | 按日筛选 Docker 日志并关键词统计；见上文「Docker 容器日志」。 |
 | `python3 scripts/sync-mysql-password-from-php-server.py` | **在 Caddy/备份所在宿主机上**运行：从 `/srv/dinngoo-room/php-server/.env` 读取 **`MYSQL_PASSWORD`** 写入本目录 **`.env`**（不打印密码）。首次部署或改过 php-server 口令后可再跑一次。 |

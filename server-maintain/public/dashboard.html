@@ -92,8 +92,9 @@
     </section>
 
     <section>
-      <h2>内存占用趋势（浏览器侧采样）</h2>
+      <h2>内存 / Swap 占用趋势（浏览器侧轮询采样）</h2>
       <div class="chart-tile"><canvas id="mem-chart"></canvas></div>
+      <p class="muted" style="margin-top:8px;">Swap 曲线在宿主机未配置 Swap 或指标无此项时为 0。</p>
     </section>
 
     <section>
@@ -139,11 +140,21 @@
               backgroundColor: 'rgba(0, 144, 179, 0.12)',
               tension: 0.25,
               fill: true,
+            }, {
+              label: 'Swap 使用率 %',
+              data: [],
+              borderColor: 'rgba(245, 158, 11, 0.95)',
+              backgroundColor: 'rgba(245, 158, 11, 0.08)',
+              tension: 0.25,
+              fill: false,
             }],
           },
           options: {
             responsive: true,
             maintainAspectRatio: false,
+            plugins: {
+              legend: { display: true, position: 'top' },
+            },
             scales: {
               y: { min: 0, max: 100, ticks: { callback: function (v) { return v + '%'; } } },
             },
@@ -151,14 +162,15 @@
         });
       }
 
-      function pushMem(pct) {
+      function pushMem(memPct, swapPct) {
         ensureChart();
         if (!chart) return;
-        var t = new Date().toLocaleTimeString();
-        memHistory.push({ t: t, p: pct });
+        var t = new Date().toLocaleTimeString('zh-CN', { hour12: false });
+        memHistory.push({ t: t, mem: memPct, swap: swapPct });
         if (memHistory.length > maxPoints) memHistory.shift();
         chart.data.labels = memHistory.map(function (o) { return o.t; });
-        chart.data.datasets[0].data = memHistory.map(function (o) { return o.p; });
+        chart.data.datasets[0].data = memHistory.map(function (o) { return o.mem; });
+        chart.data.datasets[1].data = memHistory.map(function (o) { return o.swap; });
         chart.update('none');
       }
 
@@ -179,6 +191,15 @@
           : 0;
         card('Load', load || '—', '1 / 5 / 15 分钟');
         card('内存占用', memPct.toFixed(1) + '%', fmtBytes(m.memory && m.memory.usedBytes) + ' / ' + fmtBytes(m.memory && m.memory.totalBytes));
+
+        var sw = m.swap;
+        if (sw && sw.totalBytes > 0) {
+          var swPct = (sw.usedBytes / sw.totalBytes) * 100;
+          card('Swap', swPct.toFixed(1) + '%', fmtBytes(sw.usedBytes) + ' / ' + fmtBytes(sw.totalBytes));
+        } else {
+          card('Swap', '—', '未配置或指标未采集（非 Linux 或无 /proc/meminfo）');
+        }
+
         card('CPU 逻辑核', String(m.cpuCount || '—'), m.hostname || '');
 
         var bk = m.dbBackup;
@@ -247,15 +268,34 @@
         fetch('metrics.json?t=' + Date.now(), { cache: 'no-store' })
           .then(function (r) { return r.json(); })
           .then(function (m) {
+            var localUpdated = m.tsLocale;
+            if (!localUpdated) {
+              var rawTs = m.tsIso ? new Date(m.tsIso) : new Date(m.ts);
+              localUpdated = isNaN(rawTs.getTime())
+                ? String(m.tsIso || m.ts || '—')
+                : rawTs.toLocaleString('zh-CN', {
+                    year: 'numeric',
+                    month: '2-digit',
+                    day: '2-digit',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    second: '2-digit',
+                    hour12: false,
+                  });
+            }
             document.getElementById('status-line').textContent =
-              '上次更新：' + (m.tsIso || new Date(m.ts).toISOString());
+              '上次更新：' + localUpdated + '（服务器本地时间）';
             setCards(m);
             setDisk(m.disks);
             setDocker(m.docker);
             var memPct = m.memory && m.memory.totalBytes
               ? ((m.memory.usedBytes / m.memory.totalBytes) * 100)
               : 0;
-            pushMem(Number(memPct.toFixed(1)));
+            var swapPct = 0;
+            if (m.swap && m.swap.totalBytes > 0) {
+              swapPct = (m.swap.usedBytes / m.swap.totalBytes) * 100;
+            }
+            pushMem(Number(memPct.toFixed(1)), Number(swapPct.toFixed(1)));
           })
           .catch(function () {
             document.getElementById('status-line').innerHTML =

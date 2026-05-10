@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import {
   writeFileSync,
+  readFileSync,
   renameSync,
   existsSync,
   statSync,
@@ -65,6 +66,35 @@ function parseDfP(out, unitMul) {
       };
     })
     .filter(Boolean);
+}
+
+/** Linux `/proc/meminfo`：Swap 单位为 kB；非 Linux 或无权限返回 null */
+function swapFromProcMeminfo() {
+  if (process.platform !== "linux") return null;
+  try {
+    const txt = readFileSync("/proc/meminfo", "utf8");
+    let totalKb = 0;
+    let freeKb = 0;
+    for (const line of txt.split("\n")) {
+      if (line.startsWith("SwapTotal:")) {
+        totalKb = Number(line.split(/\s+/)[1]) || 0;
+      } else if (line.startsWith("SwapFree:")) {
+        freeKb = Number(line.split(/\s+/)[1]) || 0;
+      }
+    }
+    const usedKb = Math.max(0, totalKb - freeKb);
+    const totalBytes = totalKb * 1024;
+    const freeBytes = freeKb * 1024;
+    const usedBytes = usedKb * 1024;
+    return {
+      totalBytes,
+      freeBytes,
+      usedBytes,
+      usePercent: totalKb > 0 ? usedKb / totalKb : 0,
+    };
+  } catch {
+    return null;
+  }
 }
 
 function tryDockerStats() {
@@ -152,9 +182,24 @@ function main() {
   const totalMem = os.totalmem();
   const freeMem = os.freemem();
 
+  const swap = swapFromProcMeminfo();
+
+  const now = new Date();
+  const tsLocale = now.toLocaleString("zh-CN", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+    timeZone: process.env.TZ || undefined,
+  });
+
   const payload = {
-    ts: Date.now(),
-    tsIso: new Date().toISOString(),
+    ts: now.getTime(),
+    tsIso: now.toISOString(),
+    tsLocale,
     hostname: os.hostname(),
     platform: os.platform(),
     loadavg: os.loadavg(),
@@ -165,6 +210,7 @@ function main() {
       usedBytes: totalMem - freeMem,
       usePercent: totalMem ? (totalMem - freeMem) / totalMem : 0,
     },
+    swap,
     disks: dfInfo(),
     docker: tryDockerStats(),
     dbBackup,
