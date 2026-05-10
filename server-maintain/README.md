@@ -74,8 +74,9 @@ sudo bash deploy/install-dinngoo-maintain-cron.sh
 
 - **日报**：`59 23 * * *`（cron 在 **23:59:00** 触发）→ `cron-daily-report-end-of-day.sh` 内 **`sleep 59`** → 约 **23:59:59** 执行，并对**当天**用 `--date $(date +%F)` 生成 HTML（与下文「0:20 昨日」语义不同，见脚本注释）。
 - **指标**：每分钟一次 **`run-metrics-loop-minute.sh`**，分钟内 **6 次** `collect-metrics.mjs`、间隔约 **10 秒**。
+- **MySQL 全量备份**：`5 1 * * *` → **`scripts/cron-mysql-backup-daily.sh`**（加载 `.env` 后调用 `mysql-full-backup.sh`），日志 **`/var/log/maint-mysql-backup.log`**。
 
-日志：`/var/log/maint-report.log`、`/var/log/maint-metrics.log`（安装脚本会 `touch` 并 `chown` 给运维用户）。
+日志：`/var/log/maint-report.log`、`/var/log/maint-metrics.log`、`/var/log/maint-mysql-backup.log`（安装脚本会 `touch` 并 `chown` 给运维用户）。
 
 ### Cron 示例（手动：UTC+8 每日 0:20 跑**昨日**日报）
 
@@ -90,6 +91,10 @@ sudo bash deploy/install-dinngoo-maintain-cron.sh
 ```
 
 ### MySQL 备份（每日）
+
+一键安装已包含 **`5 1 * * *`** 与 **`cron-mysql-backup-daily.sh`**；若曾用手动 crontab，可删掉重复行以免一天跑两次。
+
+手动等价（与旧文档一致，供对照）：
 
 ```cron
 5 1 * * * cd /srv/dinngoo-room/dinngoo-maintain/server-maintain && set -a && . ./.env && set +a && bash scripts/mysql-full-backup.sh >>/var/log/maint-mysql-backup.log 2>&1
