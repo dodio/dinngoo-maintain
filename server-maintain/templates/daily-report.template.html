@@ -113,6 +113,12 @@
     </section>
 
     <section>
+      <h2>合并 · 按域名（Host）</h2>
+      <p class="notes">按请求量 Top 40；占比相对合并总请求。5xx 列为该 Host 下服务端错误次数。</p>
+      <div class="card" style="padding:0;overflow:hidden;"><table id="tbl-hosts"><thead><tr><th>域名</th><th>请求数</th><th>占比</th><th>5xx</th></tr></thead><tbody></tbody></table></div>
+    </section>
+
+    <section>
       <h2>合并 · Top 路径</h2>
       <div class="card" style="padding:0;overflow:hidden;"><table id="tbl-paths"><thead><tr><th>路径</th><th>次数</th></tr></thead><tbody></tbody></table></div>
     </section>
@@ -181,6 +187,42 @@
           tb.appendChild(tr);
         });
       }
+
+      function fillHostTable(rows) {
+        const tb = document.querySelector('#tbl-hosts tbody');
+        tb.innerHTML = '';
+        (rows || []).forEach(function (row) {
+          const tr = document.createElement('tr');
+          const td0 = document.createElement('td');
+          td0.textContent = String(row.host);
+          const td1 = document.createElement('td');
+          td1.textContent = String(row.count);
+          const td2 = document.createElement('td');
+          td2.textContent = pct(row.pct || 0);
+          const td3 = document.createElement('td');
+          td3.textContent = String(row.error5xx || 0);
+          tr.appendChild(td0);
+          tr.appendChild(td1);
+          tr.appendChild(td2);
+          tr.appendChild(td3);
+          tb.appendChild(tr);
+        });
+      }
+
+      const hostRows = (m.topHostsDetail && m.topHostsDetail.length)
+        ? m.topHostsDetail
+        : Object.entries(m.topHosts || {})
+            .sort(function (a, b) { return b[1] - a[1]; })
+            .map(function ([host, count]) {
+            const tot = m.total || 0;
+            return {
+              host: host,
+              count: count,
+              pct: tot ? count / tot : 0,
+              error5xx: ((m.hostError5xxOnly || {})[host]) || 0,
+            };
+          });
+      fillHostTable(hostRows);
 
       fillTable('tbl-paths', Object.entries(m.topPaths || {}));
       fillTable('tbl-404ip', Object.entries(m.top404Ips || {}));

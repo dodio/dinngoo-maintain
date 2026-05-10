@@ -97,6 +97,31 @@ function getClientIp(entry) {
   );
 }
 
+/** Caddy access：`request.host`；归一化小写并去掉末尾 `:port`（含 IPv6 `[addr]:port`） */
+function normalizeHost(raw) {
+  if (raw == null || typeof raw !== "string") return "";
+  let h = raw.trim().toLowerCase();
+  if (!h) return "";
+  if (h.startsWith("[")) {
+    const m = h.match(/^\[([^\]]+)\](?::\d+)?$/);
+    return m ? `[${m[1]}]` : h;
+  }
+  const colon = h.lastIndexOf(":");
+  if (colon > 0 && /^\d+$/.test(h.slice(colon + 1))) {
+    return h.slice(0, colon);
+  }
+  return h;
+}
+
+function getHost(entry) {
+  const r = entry.request;
+  let raw = "";
+  if (r && typeof r.host === "string") raw = r.host;
+  else if (typeof entry.host === "string") raw = entry.host;
+  const h = normalizeHost(raw);
+  return h || "(无 Host)";
+}
+
 async function readLinesMatchingDay(files, startMs, endMs, onEntry) {
   let linesOk = 0;
   let parseErr = 0;
@@ -236,6 +261,8 @@ function aggregateStream(name) {
   const byStatus = makeCounter();
   const byPath = makeCounter();
   const byIp404 = makeCounter();
+  const byHost = makeCounter();
+  const byHost5xx = makeCounter();
   let n = 0;
   let n5 = 0;
   let n4 = 0;
@@ -248,12 +275,16 @@ function aggregateStream(name) {
       const st = getStatus(entry);
       const uri = getUri(entry);
       const ip = getClientIp(entry);
+      const host = getHost(entry);
       byStatus.add(String(st));
       n++;
       if (st >= 500) n5++;
       if (st >= 400 && st < 500) n4++;
       const pathOnly = uri.split("?")[0] || uri;
       byPath.add(pathOnly.split("#")[0] || "/");
+
+      byHost.add(host);
+      if (st >= 500) byHost5xx.add(host);
 
       if (st === 404) byIp404.add(ip);
 
@@ -265,6 +296,14 @@ function aggregateStream(name) {
       }
     },
     snapshot() {
+      const topHostEntries = topN(byHost.entries, 40);
+      const host5xxMap = byHost5xx.entries;
+      const topHostsDetail = topHostEntries.map(([host, count]) => ({
+        host,
+        count,
+        pct: n ? count / n : 0,
+        error5xx: host5xxMap[host] || 0,
+      }));
       return {
         name,
         total: n,
@@ -275,6 +314,11 @@ function aggregateStream(name) {
         byStatus: byStatus.entries,
         topPaths: Object.fromEntries(topN(byPath.entries, 25)),
         top404Ips: Object.fromEntries(topN(byIp404.entries, 15)),
+        topHosts: Object.fromEntries(topHostEntries),
+        topHostsDetail,
+        hostError5xxOnly: Object.fromEntries(
+          Object.entries(host5xxMap).filter(([, c]) => c > 0),
+        ),
         probeHits,
         probeByPath: probeByPath.entries,
       };
@@ -335,6 +379,7 @@ async function main() {
     sshAuth: auth,
     notes: [
       "HTTP 统计来自 Caddy JSON；5xx 视为服务端错误，4xx 含客户端与嗅探常见 404。",
+      "域名维度取自 request.host（已小写并去掉末尾端口）；合并表为按请求量 Top 40。",
       "嗅探路径为 URI 子串启发式规则，模板内 PROBE 与脚本一致。",
     ],
   };
