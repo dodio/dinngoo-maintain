@@ -55,7 +55,7 @@ sudo bash deploy/install-dinngoo-server-maintain-wrappers.sh
 
 ## 4. 日常（运维用户）
 
-**一次性**：配置 **日报（约每日 23:59:59）**、**指标采集（约每 10 秒）** 与 **MySQL 全量备份（每日 01:05）** 的 cron（写入 `/etc/cron.d/dinngoo-server-maintain`）：
+**一次性**：配置 **日报（每日 02:00，统计昨天全天）**、**指标采集（约每 10 秒）** 与 **MySQL 全量备份（每日 02:00）** 的 cron（写入 `/etc/cron.d/dinngoo-server-maintain`）：
 
 ```bash
 cd /srv/dinngoo-room/dinngoo-maintain

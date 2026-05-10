@@ -60,6 +60,8 @@ HTTP 访问量仍以 **Caddy JSON 访问日志**为主；本脚本侧重**容器
 | **cron**（见下行示例） | 已用 `>>…log 2>&1` 时，看 **`/var/log/maint-report.log`**、**`/var/log/maint-mysql-backup.log`** 等；**指标**那一行若未重定向，只会邮件给 crontab 的 `MAILTO`，或丢失——建议同样追加到例如 **`/var/log/maint-metrics.log`**。 |
 | **systemd oneshot/timer** | `journalctl -u 你的服务名 -e`，或在该 unit 里配置 `StandardOutput=append:/var/log/...`。 |
 
+**日报有文件名但图表与访问量全是 0**：多为报表日与日志 **`ts`** 错位。已修复旧版 **`cron-daily-report-end-of-day.sh`** 在 **`sleep 59` 之后**再取 `date +%F` 导致跨到「次日」、却把几乎尚无访问的那一天当成统计日的 bug；请重装 cron（`install-dinngoo-maintain-cron.sh`）或改用 **`cron-daily-report-yesterday.sh`**。手工补生成：`TZ=Asia/Shanghai node scripts/generate-daily-report.mjs --date YYYY-MM-DD`。
+
 本机复现：`cd` 到 `server-maintain` 后加载 `.env`，再执行同一命令（不加 cron），一般能立刻看到报错原因（缺环境变量、无权限读 Caddy 日志、MySQL 连不上等）。
 
 ### Cron：推荐一键安装（`/etc/cron.d`）
@@ -72,16 +74,18 @@ sudo bash deploy/install-dinngoo-maintain-cron.sh
 
 会写入 **`/etc/cron.d/dinngoo-server-maintain`**：
 
-- **日报**：`59 23 * * *`（cron 在 **23:59:00** 触发）→ `cron-daily-report-end-of-day.sh` 内 **`sleep 59`** → 约 **23:59:59** 执行，并对**当天**用 `--date $(date +%F)` 生成 HTML（与下文「0:20 昨日」语义不同，见脚本注释）。
+- **日报**：`0 2 * * *` → **`cron-daily-report-yesterday.sh`** → 统计 **昨天** 全天（本地自然日 **00:00～23:59**，与 `generate-daily-report.mjs` 不传 `--date` 的默认一致）；cron 环境默认 **`TZ=Asia/Shanghai`**。
 - **指标**：每分钟一次 **`run-metrics-loop-minute.sh`**，分钟内 **6 次** `collect-metrics.mjs`、间隔约 **10 秒**。
-- **MySQL 全量备份**：`5 1 * * *` → **`scripts/cron-mysql-backup-daily.sh`**（加载 `.env` 后调用 `mysql-full-backup.sh`），日志 **`/var/log/maint-mysql-backup.log`**。
+- **MySQL 全量备份**：`0 2 * * *` → **`scripts/cron-mysql-backup-daily.sh`**（加载 `.env` 后调用 `mysql-full-backup.sh`），日志 **`/var/log/maint-mysql-backup.log`**。
+
+仍保留 **`cron-daily-report-end-of-day.sh`**（23:59 触发 + sleep 前固定报表日）：若在旧方案中需「当日」收尾统计，请在 sleep **之前**取 `date +%F`（脚本已按此修复）；推荐新部署改用凌晨「昨天」方案以免跨日边界误判。
 
 日志：`/var/log/maint-report.log`、`/var/log/maint-metrics.log`、`/var/log/maint-mysql-backup.log`（安装脚本会 `touch` 并 `chown` 给运维用户）。
 
-### Cron 示例（手动：UTC+8 每日 0:20 跑**昨日**日报）
+### Cron 示例（手动：UTC+8 每日 02:00 跑**昨日**日报）
 
 ```cron
-20 0 * * * cd /srv/dinngoo-room/dinngoo-maintain/server-maintain && set -a && [ -f .env ] && . ./.env && set +a && /usr/bin/node scripts/generate-daily-report.mjs >>/var/log/maint-report.log 2>&1
+0 2 * * * cd /srv/dinngoo-room/dinngoo-maintain/server-maintain && TZ=Asia/Shanghai set -a && [ -f .env ] && . ./.env && set +a && /usr/bin/node scripts/generate-daily-report.mjs >>/var/log/maint-report.log 2>&1
 ```
 
 ### 指标采集（手动：每 10 秒；或使用 `run-metrics-loop-minute.sh`）
@@ -92,12 +96,12 @@ sudo bash deploy/install-dinngoo-maintain-cron.sh
 
 ### MySQL 备份（每日）
 
-一键安装已包含 **`5 1 * * *`** 与 **`cron-mysql-backup-daily.sh`**；若曾用手动 crontab，可删掉重复行以免一天跑两次。
+一键安装已包含 **`0 2 * * *`** 与 **`cron-mysql-backup-daily.sh`**；若曾用手动 crontab，可删掉重复行以免一天跑两次。
 
-手动等价（与旧文档一致，供对照）：
+手动等价（供对照）：
 
 ```cron
-5 1 * * * cd /srv/dinngoo-room/dinngoo-maintain/server-maintain && set -a && . ./.env && set +a && bash scripts/mysql-full-backup.sh >>/var/log/maint-mysql-backup.log 2>&1
+0 2 * * * cd /srv/dinngoo-room/dinngoo-maintain/server-maintain && set -a && . ./.env && set +a && bash scripts/mysql-full-backup.sh >>/var/log/maint-mysql-backup.log 2>&1
 ```
 
 ### Docker 日志按日扫描（可选）

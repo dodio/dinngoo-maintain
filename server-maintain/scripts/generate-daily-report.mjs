@@ -2,7 +2,8 @@
 /**
  * 从 Caddy JSON 访问日志按「行内 ts」过滤自然日，生成静态 HTML 日报。
  * 用法: node scripts/generate-daily-report.mjs [--date YYYY-MM-DD]
- * 默认: 本地时区「昨天」。
+ * 默认: 「昨天」——本地时区（建议 cron 设 TZ=Asia/Shanghai，见 cron-daily-report-yesterday.sh）。
+ * 报表日区间: 当日 00:00:00.000 ～ 23:59:59.999（与 --date 指定日一致），与脚本在凌晨何时运行无关。
  */
 
 import { createReadStream } from "node:fs";

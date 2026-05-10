@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
-# 供 /etc/cron.d 在 59 23 * * * 调用：在 23:59:00 被拉起后 sleep 59，约于 23:59:59 生成「当日」日报（--date 当天）。
+# 供 /etc/cron.d 在 59 23 * * * 调用：在 23:59:00 被拉起后 sleep 59，约于次日 00:00 前后结束。
+# 报表日须在 sleep 之前取 date：sleep 后日历已进入「次日」，若再用 date +%F 会错选空数据的「新一天」。
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT" || exit 1
+
+REPORT_YMD="$(date +%F)"
 
 sleep 59
 
@@ -16,5 +19,4 @@ set -a
 [[ -f "${ROOT}/.env" ]] && . "${ROOT}/.env"
 set +a
 
-TODAY="$(date +%F)"
-exec "${NODE}" "${ROOT}/scripts/generate-daily-report.mjs" --date "${TODAY}"
+exec "${NODE}" "${ROOT}/scripts/generate-daily-report.mjs" --date "${REPORT_YMD}"
