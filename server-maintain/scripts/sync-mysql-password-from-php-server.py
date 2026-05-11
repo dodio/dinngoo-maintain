@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""将 php-server/.env 中的 MYSQL_PASSWORD 合并到 server-maintain/.env（不写出口令）。
+"""将 php-server/.env 中的 MYSQL_USER / MYSQL_PASSWORD 合并到 server-maintain/.env（不写出口令）。
 
 路径固定为 deploy/SERVER-MAINTAIN-部署.md 中的 /srv/dinngoo-room 约定。
+备份脚本须与应用库用户一致（通常为 room），勿仅用 root + 应用口令。
 """
 import re
 import sys
@@ -26,6 +27,11 @@ def main() -> int:
         print("no MYSQL_PASSWORD in php-server/.env", file=sys.stderr)
         return 1
 
+    um = re.search(r"^MYSQL_USER=(.*)$", raw, re.MULTILINE)
+    user_val = um.group(1).strip() if um else ""
+    if user_val and ((user_val.startswith('"') and user_val.endswith('"')) or (user_val.startswith("'") and user_val.endswith("'"))):
+        user_val = user_val[1:-1]
+
     val = m.group(1).strip()
     if (val.startswith('"') and val.endswith('"')) or (val.startswith("'") and val.endswith("'")):
         val = val[1:-1]
@@ -46,8 +52,23 @@ def main() -> int:
     else:
         maint_n = maint.rstrip() + "\nMYSQL_PASSWORD=" + safe + "\n"
 
+    if user_val and not re.search(r'[\s#"\'\\]', user_val):
+        if re.search(r"^MYSQL_USER=", maint_n, re.MULTILINE):
+            maint_n = re.sub(
+                r"^MYSQL_USER=.*$",
+                "MYSQL_USER=" + user_val,
+                maint_n,
+                count=1,
+                flags=re.MULTILINE,
+            )
+        else:
+            maint_n = maint_n.rstrip() + "\nMYSQL_USER=" + user_val + "\n"
+
     maint_path.write_text(maint_n, encoding="utf-8")
-    print("ok: MYSQL_PASSWORD synced from php-server/.env (value not shown)")
+    print(
+        "ok: MYSQL_PASSWORD synced from php-server/.env (value not shown)"
+        + (f"; MYSQL_USER={user_val}" if user_val else ""),
+    )
     return 0
 
 
