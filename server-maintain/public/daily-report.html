@@ -126,18 +126,32 @@
       var report = null;
 
       function isValidYmd(ymd) {
-        if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd || "")) return false;
-        var d = new Date(ymd + "T00:00:00");
-        return !isNaN(d.getTime()) && d.toISOString().slice(0, 10) === ymd;
+        var m = String(ymd || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+        if (!m) return false;
+        var y = Number(m[1]);
+        var mo = Number(m[2]);
+        var day = Number(m[3]);
+        var d = new Date(y, mo - 1, day, 0, 0, 0, 0);
+        return (
+          !isNaN(d.getTime()) &&
+          d.getFullYear() === y &&
+          d.getMonth() === mo - 1 &&
+          d.getDate() === day
+        );
       }
       function ymdToday() {
         var d = new Date();
         return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
       }
+      function ymdYesterday() {
+        var d = new Date();
+        d.setDate(d.getDate() - 1);
+        return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+      }
       function getDateFromUrl() {
         var u = new URL(window.location.href);
         var date = (u.searchParams.get("date") || "").trim();
-        return isValidYmd(date) ? date : ymdToday();
+        return isValidYmd(date) ? date : ymdYesterday();
       }
       function setUrlDate(ymd) {
         var u = new URL(window.location.href);
