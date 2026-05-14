@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>运维日报查看器</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" crossorigin="anonymous"></script>
+  <style>
+    :root { --ocean:#0090b3; --bg:#e6f7fa; --txt:#1f2937; --muted:#6b7280; --err:#ef4444; --warn:#f59e0b; --ok:#10b981; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif; background: var(--bg); color: var(--txt); }
+    .wrap { max-width: 1100px; margin: 0 auto; padding: 24px 16px 48px; }
+    .card { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; box-shadow: 0 8px 24px rgba(0, 144, 179, 0.12); }
+    header { padding: 20px 24px; margin-bottom: 16px; background: #002e42; color: #fff; border-radius: 16px; }
+    header h1 { margin: 0 0 8px; font-size: 28px; }
+    .toolbar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; padding: 14px; margin-bottom: 12px; }
+    input[type="date"], select, button, .link-btn { padding: 9px 12px; border: 1px solid #e5e7eb; border-radius: 10px; background: #fff; font-size: 14px; }
+    select { min-width: 280px; }
+    button { background: var(--ocean); border-color: var(--ocean); color: #fff; cursor: pointer; }
+    .link-btn { text-decoration: none; color: #374151; }
+    .banner { margin-bottom: 12px; padding: 10px 12px; border: 1px solid #e5e7eb; border-radius: 10px; background: #fff; }
+    .banner.err { background: #fff5f5; color: #991b1b; border-color: #fecaca; }
+    .hide { display: none !important; }
+    .grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
+    .stat-card { padding: 14px 16px; }
+    .stat-card h3 { margin: 0 0 8px; font-size: 12px; letter-spacing: .05em; color: #007599; text-transform: uppercase; }
+    .stat { font-size: 22px; font-weight: 700; }
+    .err { color: var(--err); } .warn { color: var(--warn); } .ok { color: var(--ok); }
+    section { margin-top: 22px; }
+    h2 { margin: 0 0 10px; color: #002e42; }
+    .notes { color: var(--muted); font-size: 13px; }
+    .charts { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
+    .chart-box { height: 300px; padding: 12px; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { padding: 8px 10px; border-bottom: 1px solid #e5e7eb; text-align: left; vertical-align: top; }
+    th { background: #f9fafb; color: #374151; }
+    td.num { text-align: right; }
+    td.uri { word-break: break-all; font-family: ui-monospace, monospace; }
+    pre.sample { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 10px; padding: 10px; white-space: pre-wrap; word-break: break-word; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>运维访问与安全日报</h1>
+      <div>报表日：<strong id="report-date-label">—</strong> · 支持 URL 参数 <code>?date=YYYY-MM-DD</code></div>
+    </header>
+
+    <div id="load-banner" class="banner">准备加载日报数据…</div>
+
+    <div class="card toolbar">
+      <label for="report-date-input">报表日期</label>
+      <input id="report-date-input" type="date" />
+      <button id="btn-load-date" type="button">查看该日</button>
+      <a class="link-btn" href="daily-report-stats.html">打开统计页</a>
+      <span class="notes">没加载到对应 JSON 时会提示。</span>
+    </div>
+
+    <div class="card toolbar">
+      <label for="scope-host">统计范围（Host）</label>
+      <select id="scope-host" disabled></select>
+      <span class="notes">当前：<strong id="scope-current-label">—</strong></span>
+    </div>
+
+    <div id="report-content" class="hide">
+      <section>
+        <h2>各域名 PV / UV</h2>
+        <div class="card" style="padding:0;overflow:hidden;">
+          <table id="tbl-host-pv-uv"><thead><tr><th>域名</th><th class="num">PV</th><th class="num">UV</th></tr></thead><tbody></tbody></table>
+        </div>
+      </section>
+
+      <div class="grid" id="summary-cards"></div>
+
+      <section>
+        <h2>HTTP 状态分布（当前范围）</h2>
+        <div class="charts">
+          <div class="card chart-box"><canvas id="chart-status"></canvas></div>
+          <div class="card chart-box"><canvas id="chart-class"></canvas></div>
+        </div>
+      </section>
+
+      <section>
+        <h2>非正常 HTTP 状态路径 Top（当前范围）</h2>
+        <div class="card" style="padding:0;overflow:hidden;">
+          <table id="tbl-abnormal-paths"><thead><tr><th>状态码</th><th>路径</th><th class="num">次数</th></tr></thead><tbody></tbody></table>
+        </div>
+      </section>
+
+      <section>
+        <h2>Top 路径（当前范围）</h2>
+        <div class="card" style="padding:0;overflow:hidden;">
+          <table id="tbl-paths"><thead><tr><th>路径</th><th class="num">次数</th></tr></thead><tbody></tbody></table>
+        </div>
+      </section>
+
+      <section>
+        <h2>404 来源 IP（当前范围）</h2>
+        <div class="card" style="padding:0;overflow:hidden;">
+          <table id="tbl-404ip"><thead><tr><th>IP</th><th class="num">404 次数</th></tr></thead><tbody></tbody></table>
+        </div>
+      </section>
+
+      <section>
+        <h2>异常请求明细（抽样）</h2>
+        <div class="card" style="padding:0;overflow:hidden;">
+          <table id="tbl-access-anomalies"><thead><tr><th>时间</th><th>Host</th><th>方法</th><th class="uri">URI</th><th class="num">状态</th><th>客户端 IP</th><th>备注</th></tr></thead><tbody></tbody></table>
+        </div>
+      </section>
+
+      <section>
+        <h2>SSH 认证日志摘要</h2>
+        <div id="ssh-block"></div>
+      </section>
+
+      <section>
+        <h2>说明</h2>
+        <ul class="notes" id="notes-ul"></ul>
+        <p class="notes" id="footer-meta"></p>
+      </section>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      var report = null;
+
+      function isValidYmd(ymd) {
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd || "")) return false;
+        var d = new Date(ymd + "T00:00:00");
+        return !isNaN(d.getTime()) && d.toISOString().slice(0, 10) === ymd;
+      }
+      function ymdToday() {
+        var d = new Date();
+        return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+      }
+      function getDateFromUrl() {
+        var u = new URL(window.location.href);
+        var date = (u.searchParams.get("date") || "").trim();
+        return isValidYmd(date) ? date : ymdToday();
+      }
+      function setUrlDate(ymd) {
+        var u = new URL(window.location.href);
+        u.searchParams.set("date", ymd);
+        history.replaceState(null, "", u.pathname + u.search + u.hash);
+      }
+      function banner(msg, isErr) {
+        var b = document.getElementById("load-banner");
+        b.textContent = msg;
+        b.classList.toggle("err", !!isErr);
+      }
+      function pct(v) { return (v * 100).toFixed(2) + "%"; }
+
+      function emptySnap() {
+        return { total: 0, pv: 0, uv: 0, error5xx: 0, error5xxRate: 0, client4xx: 0, client4xxRate: 0, byStatus: {}, topPaths: {}, top404Ips: {}, abnormalTopPaths: {}, anomalyRowsSorted: [] };
+      }
+      function currentSnap() {
+        if (!report) return emptySnap();
+        var sel = document.getElementById("scope-host").value;
+        if (sel === "__merged__") return report.merged || emptySnap();
+        if (report.perHost && report.perHost[sel]) return report.perHost[sel];
+        return emptySnap();
+      }
+      function fillTable(id, rows) {
+        var tb = document.querySelector("#" + id + " tbody");
+        tb.innerHTML = "";
+        rows.forEach(function (row) {
+          var tr = document.createElement("tr");
+          row.forEach(function (col, idx) {
+            var td = document.createElement("td");
+            td.textContent = String(col);
+            if (idx === row.length - 1 && typeof col === "number") td.className = "num";
+            tr.appendChild(td);
+          });
+          tb.appendChild(tr);
+        });
+      }
+      function fillHostPvUvTable() {
+        var rows = [];
+        var merged = report.merged || {};
+        rows.push(["∗ 合计（www + op）", Number(merged.pv != null ? merged.pv : merged.total || 0), Number(merged.uv || 0)]);
+        (report.hostOrder || []).forEach(function (host) {
+          var s = (report.perHost && report.perHost[host]) || {};
+          rows.push([host, Number(s.pv != null ? s.pv : s.total || 0), Number(s.uv || 0)]);
+        });
+        var tb = document.querySelector("#tbl-host-pv-uv tbody");
+        tb.innerHTML = "";
+        rows.forEach(function (r) {
+          var tr = document.createElement("tr");
+          var td0 = document.createElement("td"); td0.textContent = r[0];
+          var td1 = document.createElement("td"); td1.textContent = r[1].toLocaleString(); td1.className = "num";
+          var td2 = document.createElement("td"); td2.textContent = r[2].toLocaleString(); td2.className = "num";
+          tr.appendChild(td0); tr.appendChild(td1); tr.appendChild(td2); tb.appendChild(tr);
+        });
+      }
+      function fillAbnormalPaths(m) {
+        var rows = [];
+        Object.keys(m.abnormalTopPaths || {}).sort(function (a, b) { return Number(a) - Number(b); }).forEach(function (code) {
+          Object.entries(m.abnormalTopPaths[code] || {}).forEach(function (it) { rows.push([code, it[0], it[1]]); });
+        });
+        fillTable("tbl-abnormal-paths", rows);
+      }
+      function fillAnomalies(m) {
+        var tb = document.querySelector("#tbl-access-anomalies tbody");
+        tb.innerHTML = "";
+        (m.anomalyRowsSorted || []).forEach(function (r) {
+          var tr = document.createElement("tr");
+          var when = r.tsMs ? new Date(r.tsMs).toLocaleString("zh-CN", { hour12: false, timeZone: report.timezoneHint || undefined }) : "—";
+          [when, r.host || "", r.method || "—", r.uri || "", r.status, r.clientIp || "", r.msg || ""].forEach(function (col, idx) {
+            var td = document.createElement("td");
+            td.textContent = String(col);
+            if (idx === 3) td.className = "uri";
+            if (idx === 4) td.className = "num";
+            tr.appendChild(td);
+          });
+          tb.appendChild(tr);
+        });
+      }
+      function destroyCharts() {
+        ["chart-status", "chart-class"].forEach(function (id) {
+          var ch = window.Chart && Chart.getChart && Chart.getChart(document.getElementById(id));
+          if (ch) ch.destroy();
+        });
+      }
+      function renderCharts(m) {
+        destroyCharts();
+        var byStatus = m.byStatus || {};
+        var labels = Object.keys(byStatus).sort(function (a, b) { return Number(a) - Number(b); });
+        var values = labels.map(function (k) { return byStatus[k]; });
+        if (!window.Chart || !labels.length) return;
+        new Chart(document.getElementById("chart-status"), {
+          type: "bar",
+          data: { labels: labels, datasets: [{ data: values, label: "请求数", backgroundColor: "rgba(0, 144, 179, 0.65)", borderRadius: 8 }] },
+          options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
+        });
+        var ok = 0, c4 = 0, c5 = 0;
+        labels.forEach(function (code, i) {
+          var n = Number(code), c = Number(values[i] || 0);
+          if (n >= 500) c5 += c; else if (n >= 400) c4 += c; else ok += c;
+        });
+        new Chart(document.getElementById("chart-class"), {
+          type: "doughnut",
+          data: { labels: ["2xx/3xx", "4xx", "5xx"], datasets: [{ data: [ok, c4, c5], backgroundColor: ["rgba(16,185,129,.75)", "rgba(245,158,11,.75)", "rgba(239,68,68,.75)"] }] },
+          options: { responsive: true, maintainAspectRatio: false }
+        });
+      }
+      function renderSummary(m) {
+        var cards = document.getElementById("summary-cards");
+        cards.innerHTML = "";
+        function add(title, value, cls) {
+          var el = document.createElement("div");
+          el.className = "card stat-card";
+          el.innerHTML = "<h3>" + title + "</h3><div class='stat " + (cls || "") + "'>" + value + "</div>";
+          cards.appendChild(el);
+        }
+        add("PV", (Number(m.pv != null ? m.pv : m.total || 0)).toLocaleString());
+        add("UV", (Number(m.uv || 0)).toLocaleString());
+        add("5xx 次数 / 占比", (m.error5xx || 0) + " / " + pct(m.error5xxRate || 0), m.error5xx ? "err" : "ok");
+        add("4xx 次数 / 占比", (m.client4xx || 0) + " / " + pct(m.client4xxRate || 0), m.client4xx ? "warn" : "ok");
+      }
+      function renderScope() {
+        var sel = document.getElementById("scope-host").value;
+        var m = currentSnap();
+        document.getElementById("scope-current-label").textContent = sel === "__merged__" ? "全部合并（www + op）" : sel;
+        renderSummary(m);
+        renderCharts(m);
+        fillAbnormalPaths(m);
+        fillTable("tbl-paths", Object.entries(m.topPaths || {}));
+        fillTable("tbl-404ip", Object.entries(m.top404Ips || {}));
+        fillAnomalies(m);
+      }
+      function renderStaticBlocks() {
+        var ssh = report.sshAuth || {};
+        var box = document.getElementById("ssh-block");
+        if (!ssh.ok) {
+          box.innerHTML = "<div class='card'><p class='notes'>未采集：" + (ssh.reason || "未知") + "</p></div>";
+        } else {
+          box.innerHTML = "<div class='grid'><div class='card stat-card'><h3>Failed password</h3><div class='stat warn'>" + (ssh.failedPassword || 0) + "</div></div><div class='card stat-card'><h3>Invalid user</h3><div class='stat warn'>" + (ssh.invalidUser || 0) + "</div></div></div>";
+          if (ssh.samples && ssh.samples.length) {
+            var pre = document.createElement("pre");
+            pre.className = "sample";
+            pre.textContent = ssh.samples.join("\n");
+            box.appendChild(pre);
+          }
+        }
+        var ul = document.getElementById("notes-ul");
+        ul.innerHTML = "";
+        (report.notes || []).forEach(function (n) {
+          var li = document.createElement("li");
+          li.textContent = n;
+          ul.appendChild(li);
+        });
+        document.getElementById("footer-meta").textContent = "生成时间（UTC）：" + (report.generatedAt || "") + " · 时区提示：" + (report.timezoneHint || "") + " · 解析错误行数：" + (((report.lineStats || {}).parseErrors) || 0);
+      }
+      function resetScope() {
+        var sel = document.getElementById("scope-host");
+        sel.innerHTML = "";
+        var o0 = document.createElement("option");
+        o0.value = "__merged__";
+        o0.textContent = "全部合并（www + op）";
+        sel.appendChild(o0);
+        (report.hostOrder || []).forEach(function (host) {
+          var o = document.createElement("option");
+          var snap = (report.perHost && report.perHost[host]) || {};
+          o.value = host;
+          o.textContent = host + "（PV " + Number(snap.pv != null ? snap.pv : snap.total || 0).toLocaleString() + " · UV " + Number(snap.uv || 0).toLocaleString() + "）";
+          sel.appendChild(o);
+        });
+        sel.disabled = false;
+        sel.value = "__merged__";
+      }
+
+      function showNoData(ymd, extra) {
+        report = null;
+        document.getElementById("report-content").classList.add("hide");
+        document.getElementById("scope-host").disabled = true;
+        document.getElementById("report-date-label").textContent = ymd;
+        banner("没加载到 " + ymd + " 的日报 JSON（" + (extra || "请确认该日期文件是否已生成") + "）", true);
+      }
+
+      function fetchDailyReport(ymd) {
+        var file = "daily-" + ymd + ".json";
+        return fetch(file + "?t=" + Date.now(), { cache: "no-store" }).then(function (r) {
+          if (!r.ok) throw new Error("HTTP " + r.status);
+          return r.json();
+        });
+      }
+
+      function loadForDate(ymd) {
+        if (!isValidYmd(ymd)) return;
+        document.getElementById("report-date-input").value = ymd;
+        document.getElementById("report-date-label").textContent = ymd;
+        setUrlDate(ymd);
+        banner("正在加载 " + ymd + " 的日报 JSON…", false);
+        fetchDailyReport(ymd).then(function (data) {
+          report = data || {};
+          fillHostPvUvTable();
+          resetScope();
+          renderStaticBlocks();
+          renderScope();
+          document.getElementById("report-content").classList.remove("hide");
+          banner("已加载 " + ymd + "（" + "daily-" + ymd + ".json）", false);
+        }).catch(function (e) {
+          showNoData(ymd, String((e && e.message) || "加载失败"));
+        });
+      }
+
+      document.getElementById("scope-host").addEventListener("change", function () {
+        if (report) renderScope();
+      });
+      document.getElementById("btn-load-date").addEventListener("click", function () {
+        var ymd = document.getElementById("report-date-input").value;
+        if (!isValidYmd(ymd)) {
+          banner("日期格式不正确，请选择有效日期。", true);
+          return;
+        }
+        loadForDate(ymd);
+      });
+      document.getElementById("report-date-input").addEventListener("keydown", function (e) {
+        if (e.key === "Enter") document.getElementById("btn-load-date").click();
+      });
+
+      loadForDate(getDateFromUrl());
+    })();
+  </script>
+</body>
+</html>

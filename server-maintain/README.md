@@ -6,10 +6,12 @@
 
 - Node.js **≥ 18**
 - 日报与指标脚本需在能读 **`/var/log/caddy/`**、写 **`REPORT_DIR`** 的用户下运行（常为 root 或 `adm` 组成员）。
-- Caddy 站点 **`maint.dinngoo.xyz`**（测试环境运维仪表盘）的 `MAINT_STATIC_ROOT` 与本目录的 **`REPORT_DIR` 相同**；其它环境请与对应 `maint.*` 子域一致。首次把 [`public/dashboard.html`](./public/dashboard.html) 拷到该目录（与 `metrics.json` 同目录，便于相对路径拉取）。
+- Caddy 站点 **`maint.dinngoo.xyz`**（测试环境运维仪表盘）的 `MAINT_STATIC_ROOT` 与本目录的 **`REPORT_DIR` 相同**；其它环境请与对应 `maint.*` 子域一致。首次把 [`public/dashboard.html`](./public/dashboard.html)、[`public/daily-report.html`](./public/daily-report.html)、[`public/daily-report-stats.html`](./public/daily-report-stats.html) 拷到该目录（与 `metrics.json`、`daily-YYYY-MM-DD.json` 同目录，便于相对路径拉取）。
 
 ```bash
 cp public/dashboard.html "$REPORT_DIR/"
+cp public/daily-report.html "$REPORT_DIR/"
+cp public/daily-report-stats.html "$REPORT_DIR/"
 ```
 
 ## 配置
@@ -25,6 +27,11 @@ export SERVER_MAINTAIN_ENV=/path/to/.env
 Caddy 日志按**大小**滚动即可；日报脚本根据每行 JSON 的 **`ts`** 过滤到报表日（本地时区或 `TZ`），不要求一天一个日志文件。
 
 日报 HTML 顶栏可按 **`request.host`** 切换「全部合并」或单个域名：卡片（请求数、5xx/4xx、嗅探）、状态图、Top 路径、404 IP、嗅探表、**非正常状态路径**与**异常请求明细**均随当前 Host 过滤。`www` / `op` **行命中**仅在合并模式下有意义。可选在 `.env` 设置 **`REPORT_ATTACH_DOCKER_LOGS=1`** 与 **`REPORT_DOCKER_LOG_SERVICES`**，在报表日内按关键词从 **`docker logs`** 摘录 PHP/Node 等错误行（访问日志本身通常不含堆栈）。
+
+浏览页面说明：
+
+- `daily-report.html`：默认读取今天日期，也可通过 `?date=YYYY-MM-DD` 指定，或用页面日期控件切换；会请求同目录 `daily-YYYY-MM-DD.json`，未找到会提示「没加载到」。
+- `daily-report-stats.html`：默认统计最近 7 天，也支持自定义日期范围；按天请求 `daily-YYYY-MM-DD.json` 并绘制 PV/UV/4xx/5xx/嗅探命中趋势折线图。
 
 ## Docker 容器日志
 
@@ -43,7 +50,7 @@ HTTP 访问量仍以 **Caddy JSON 访问日志**为主；本脚本侧重**容器
 
 | 脚本 | 说明 |
 |------|------|
-| `npm run report` | 生成 `daily-YYYY-MM-DD.html` 到 `REPORT_DIR`。默认统计「昨天」；`--date YYYY-MM-DD` 或 `REPORT_DATE` 覆盖。 |
+| `npm run report` | 生成 `daily-YYYY-MM-DD.json` 到 `REPORT_DIR`。默认统计「昨天」；`--date YYYY-MM-DD` 或 `REPORT_DATE` 覆盖。 |
 | `npm run metrics` | 写入 `METRICS_JSON_PATH`（默认 `$REPORT_DIR/metrics.json`），供 `dashboard.html` 轮询；含内存、**Linux Swap**（`/proc/meminfo`）、磁盘、`docker stats`、最新备份等。 |
 | `bash scripts/mysql-full-backup.sh` | 全量 `mysqldump \| gzip` 到 `BACKUP_DIR`，并按 `BACKUP_KEEP_DAYS` 清理。 |
 | `npm run docker-logs` | 按日筛选 Docker 日志并关键词统计；见上文「Docker 容器日志」。 |
@@ -62,7 +69,7 @@ HTTP 访问量仍以 **Caddy JSON 访问日志**为主；本脚本侧重**容器
 | **cron**（见下行示例） | 已用 `>>…log 2>&1` 时，看 **`/var/log/maint-report.log`**、**`/var/log/maint-mysql-backup.log`** 等；**指标**那一行若未重定向，只会邮件给 crontab 的 `MAILTO`，或丢失——建议同样追加到例如 **`/var/log/maint-metrics.log`**。 |
 | **systemd oneshot/timer** | `journalctl -u 你的服务名 -e`，或在该 unit 里配置 `StandardOutput=append:/var/log/...`。 |
 
-**日报有文件名但图表与访问量全是 0**：多为报表日与日志 **`ts`** 错位。已修复旧版 **`cron-daily-report-end-of-day.sh`** 在 **`sleep 59` 之后**再取 `date +%F` 导致跨到「次日」、却把几乎尚无访问的那一天当成统计日的 bug；请重装 cron（`install-dinngoo-maintain-cron.sh`）或改用 **`cron-daily-report-yesterday.sh`**。手工补生成：`TZ=Asia/Shanghai node scripts/generate-daily-report.mjs --date YYYY-MM-DD`。
+**日报 JSON 有文件名但图表与访问量全是 0**：多为报表日与日志 **`ts`** 错位。已修复旧版 **`cron-daily-report-end-of-day.sh`** 在 **`sleep 59` 之后**再取 `date +%F` 导致跨到「次日」、却把几乎尚无访问的那一天当成统计日的 bug；请重装 cron（`install-dinngoo-maintain-cron.sh`）或改用 **`cron-daily-report-yesterday.sh`**。手工补生成：`TZ=Asia/Shanghai node scripts/generate-daily-report.mjs --date YYYY-MM-DD`。
 
 本机复现：`cd` 到 `server-maintain` 后加载 `.env`，再执行同一命令（不加 cron），一般能立刻看到报错原因（缺环境变量、无权限读 Caddy 日志、MySQL 连不上等）。
 

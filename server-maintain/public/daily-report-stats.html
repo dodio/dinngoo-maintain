@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>运维日报统计</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" crossorigin="anonymous"></script>
+  <style>
+    :root { --ocean:#0090b3; --bg:#e6f7fa; --txt:#1f2937; --muted:#6b7280; --err:#ef4444; --ok:#10b981; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif; background: var(--bg); color: var(--txt); }
+    .wrap { max-width: 1100px; margin: 0 auto; padding: 24px 16px 48px; }
+    .card { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; box-shadow: 0 8px 24px rgba(0, 144, 179, 0.12); }
+    header { padding: 20px 24px; margin-bottom: 16px; background: #002e42; color: #fff; border-radius: 16px; }
+    header h1 { margin: 0 0 8px; font-size: 28px; }
+    .toolbar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; padding: 14px; margin-bottom: 12px; }
+    input[type="date"], button, .link-btn { padding: 9px 12px; border: 1px solid #e5e7eb; border-radius: 10px; background: #fff; font-size: 14px; }
+    button { background: var(--ocean); border-color: var(--ocean); color: #fff; cursor: pointer; }
+    .link-btn { text-decoration: none; color: #374151; }
+    .banner { margin-bottom: 12px; padding: 10px 12px; border: 1px solid #e5e7eb; border-radius: 10px; background: #fff; color: #374151; }
+    .banner.err { background: #fff5f5; color: #991b1b; border-color: #fecaca; }
+    .grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); margin-top: 14px; }
+    .stat-card { padding: 14px 16px; }
+    .stat-card h3 { margin: 0 0 8px; font-size: 12px; letter-spacing: .05em; color: #007599; text-transform: uppercase; }
+    .stat { font-size: 22px; font-weight: 700; }
+    .err { color: var(--err); } .ok { color: var(--ok); }
+    .chart-box { margin-top: 16px; height: 360px; padding: 12px; }
+    .notes { color: var(--muted); font-size: 13px; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 14px; }
+    th, td { padding: 8px 10px; border-bottom: 1px solid #e5e7eb; text-align: left; }
+    th { background: #f9fafb; color: #374151; }
+    td.num { text-align: right; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>运维日报统计</h1>
+      <div>默认读取最近 7 天日报 JSON，也支持自定义日期范围。</div>
+    </header>
+
+    <div id="status" class="banner">准备统计…</div>
+
+    <div class="card toolbar">
+      <label for="start-date">开始</label>
+      <input id="start-date" type="date" />
+      <label for="end-date">结束</label>
+      <input id="end-date" type="date" />
+      <button id="btn-last7" type="button">最近 7 天</button>
+      <button id="btn-load" type="button">加载统计</button>
+      <a class="link-btn" href="daily-report.html">返回日报页</a>
+    </div>
+
+    <div class="grid" id="summary-cards"></div>
+
+    <div class="card chart-box">
+      <canvas id="trend-chart"></canvas>
+    </div>
+
+    <div class="card" style="padding:0;overflow:hidden;">
+      <table id="tbl-days">
+        <thead><tr><th>日期</th><th class="num">PV</th><th class="num">UV</th><th class="num">4xx</th><th class="num">5xx</th><th class="num">嗅探命中</th><th>状态</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+    <p class="notes">说明：统计基于每日 `daily-YYYY-MM-DD.json` 的 `merged` 数据。缺失日期不会中断，会在表格中标注“未加载到”。</p>
+  </div>
+
+  <script>
+    (function () {
+      var trendChart = null;
+
+      function ymd(d) {
+        return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+      }
+      function isValidYmd(v) {
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(v || "")) return false;
+        var d = new Date(v + "T00:00:00");
+        return !isNaN(d.getTime()) && d.toISOString().slice(0, 10) === v;
+      }
+      function eachDate(startYmd, endYmd) {
+        var out = [];
+        var cur = new Date(startYmd + "T00:00:00");
+        var end = new Date(endYmd + "T00:00:00");
+        while (cur.getTime() <= end.getTime()) {
+          out.push(ymd(cur));
+          cur.setDate(cur.getDate() + 1);
+        }
+        return out;
+      }
+      function setStatus(msg, isErr) {
+        var el = document.getElementById("status");
+        el.textContent = msg;
+        el.classList.toggle("err", !!isErr);
+      }
+      function setDefaultLast7() {
+        var end = new Date();
+        var start = new Date();
+        start.setDate(end.getDate() - 6);
+        document.getElementById("start-date").value = ymd(start);
+        document.getElementById("end-date").value = ymd(end);
+      }
+      function fetchOne(dateStr) {
+        var file = "daily-" + dateStr + ".json";
+        return fetch(file + "?t=" + Date.now(), { cache: "no-store" }).then(function (r) {
+          if (!r.ok) throw new Error("HTTP " + r.status);
+          return r.json();
+        });
+      }
+      function destroyChart() {
+        if (trendChart) trendChart.destroy();
+        trendChart = null;
+      }
+      function renderChart(rows) {
+        destroyChart();
+        var labels = rows.map(function (r) { return r.date; });
+        var pv = rows.map(function (r) { return r.ok ? r.pv : null; });
+        var uv = rows.map(function (r) { return r.ok ? r.uv : null; });
+        var e4 = rows.map(function (r) { return r.ok ? r.client4xx : null; });
+        var e5 = rows.map(function (r) { return r.ok ? r.error5xx : null; });
+        var p = rows.map(function (r) { return r.ok ? r.probeHits : null; });
+        trendChart = new Chart(document.getElementById("trend-chart"), {
+          type: "line",
+          data: {
+            labels: labels,
+            datasets: [
+              { label: "PV", data: pv, borderColor: "rgba(0,144,179,.95)", backgroundColor: "rgba(0,144,179,.15)", tension: .25 },
+              { label: "UV", data: uv, borderColor: "rgba(16,185,129,.95)", backgroundColor: "rgba(16,185,129,.12)", tension: .25 },
+              { label: "4xx", data: e4, borderColor: "rgba(245,158,11,.95)", backgroundColor: "rgba(245,158,11,.12)", tension: .25 },
+              { label: "5xx", data: e5, borderColor: "rgba(239,68,68,.95)", backgroundColor: "rgba(239,68,68,.12)", tension: .25 },
+              { label: "嗅探命中", data: p, borderColor: "rgba(168,85,247,.95)", backgroundColor: "rgba(168,85,247,.12)", tension: .25 }
+            ]
+          },
+          options: { responsive: true, maintainAspectRatio: false, spanGaps: true }
+        });
+      }
+      function renderSummary(rows) {
+        var okRows = rows.filter(function (r) { return r.ok; });
+        var days = rows.length;
+        var loaded = okRows.length;
+        var totalPv = okRows.reduce(function (a, b) { return a + b.pv; }, 0);
+        var totalUv = okRows.reduce(function (a, b) { return a + b.uv; }, 0);
+        var total4 = okRows.reduce(function (a, b) { return a + b.client4xx; }, 0);
+        var total5 = okRows.reduce(function (a, b) { return a + b.error5xx; }, 0);
+        var cards = document.getElementById("summary-cards");
+        cards.innerHTML = "";
+        function add(title, val, cls) {
+          var el = document.createElement("div");
+          el.className = "card stat-card";
+          el.innerHTML = "<h3>" + title + "</h3><div class='stat " + (cls || "") + "'>" + val + "</div>";
+          cards.appendChild(el);
+        }
+        add("范围天数", String(days));
+        add("加载成功", String(loaded));
+        add("PV 合计", totalPv.toLocaleString(), "ok");
+        add("UV 合计", totalUv.toLocaleString(), "ok");
+        add("4xx 合计", total4.toLocaleString(), total4 ? "err" : "");
+        add("5xx 合计", total5.toLocaleString(), total5 ? "err" : "");
+      }
+      function renderTable(rows) {
+        var tb = document.querySelector("#tbl-days tbody");
+        tb.innerHTML = "";
+        rows.forEach(function (r) {
+          var tr = document.createElement("tr");
+          var status = r.ok ? "已加载" : "未加载到";
+          [r.date, r.ok ? r.pv : "—", r.ok ? r.uv : "—", r.ok ? r.client4xx : "—", r.ok ? r.error5xx : "—", r.ok ? r.probeHits : "—", status].forEach(function (col, idx) {
+            var td = document.createElement("td");
+            td.textContent = String(col);
+            if (idx > 0 && idx < 6) td.className = "num";
+            tr.appendChild(td);
+          });
+          tb.appendChild(tr);
+        });
+      }
+
+      function loadRange() {
+        var start = document.getElementById("start-date").value;
+        var end = document.getElementById("end-date").value;
+        if (!isValidYmd(start) || !isValidYmd(end)) {
+          setStatus("日期格式不正确，请重新选择。", true);
+          return;
+        }
+        if (start > end) {
+          setStatus("开始日期不能大于结束日期。", true);
+          return;
+        }
+        var days = eachDate(start, end);
+        if (days.length > 90) {
+          setStatus("范围过大（最多 90 天），请缩小后重试。", true);
+          return;
+        }
+        setStatus("正在加载 " + days.length + " 天数据…", false);
+        Promise.allSettled(days.map(fetchOne)).then(function (res) {
+          var rows = res.map(function (item, idx) {
+            var date = days[idx];
+            if (item.status !== "fulfilled") return { date: date, ok: false };
+            var merged = (item.value && item.value.merged) || {};
+            return {
+              date: date,
+              ok: true,
+              pv: Number(merged.pv != null ? merged.pv : merged.total || 0),
+              uv: Number(merged.uv || 0),
+              client4xx: Number(merged.client4xx || 0),
+              error5xx: Number(merged.error5xx || 0),
+              probeHits: Number(merged.probeHits || 0)
+            };
+          });
+          renderSummary(rows);
+          renderTable(rows);
+          renderChart(rows);
+          var okCnt = rows.filter(function (r) { return r.ok; }).length;
+          if (okCnt === 0) setStatus("没加载到所选范围内任何 JSON。", true);
+          else setStatus("已加载 " + okCnt + " / " + rows.length + " 天。", false);
+        });
+      }
+
+      document.getElementById("btn-last7").addEventListener("click", function () {
+        setDefaultLast7();
+        loadRange();
+      });
+      document.getElementById("btn-load").addEventListener("click", loadRange);
+
+      setDefaultLast7();
+      loadRange();
+    })();
+  </script>
+</body>
+</html>

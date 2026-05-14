@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * 从 Caddy JSON 访问日志按「行内 ts」过滤自然日，生成静态 HTML 日报。
+ * 从 Caddy JSON 访问日志按「行内 ts」过滤自然日，生成日报 JSON。
  * 用法: node scripts/generate-daily-report.mjs [--date YYYY-MM-DD]
  * 默认: 「昨天」——本地时区（建议 cron 设 TZ=Asia/Shanghai，见 cron-daily-report-yesterday.sh）。
  * 报表日区间: 当日 00:00:00.000 ～ 23:59:59.999（与 --date 指定日一致），与脚本在凌晨何时运行无关。
@@ -552,23 +552,10 @@ async function main() {
     ],
   };
 
-  const tplPath = join(ROOT, "templates", "daily-report.template.html");
-  if (!existsSync(tplPath)) {
-    console.error("缺少模板", tplPath);
-    process.exit(1);
-  }
-
-  let html = readFileSync(tplPath, "utf8");
-  const payload = JSON.stringify(data);
-  html = html.replaceAll("__REPORT_JSON__", () =>
-    payload.replace(/</g, "\\u003c"),
-  );
-  html = html.replaceAll("__REPORT_DATE__", ymd);
-
   const base = process.env.REPORT_BASENAME || "daily";
-  const outName = `${base}-${ymd}.html`;
+  const outName = `${base}-${ymd}.json`;
   const outPath = join(reportDir, outName);
-  writeFileSync(outPath, html, "utf8");
+  writeFileSync(outPath, JSON.stringify(data, null, 2) + "\n", "utf8");
   console.log("已写入", outPath);
 }
 
