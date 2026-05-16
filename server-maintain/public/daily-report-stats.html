@@ -59,7 +59,7 @@
 
     <div class="card" style="padding:0;overflow:hidden;">
       <table id="tbl-days">
-        <thead><tr><th>日期</th><th class="num">PV</th><th class="num">UV</th><th class="num">4xx</th><th class="num">5xx</th><th class="num">嗅探命中</th><th>状态</th></tr></thead>
+        <thead><tr><th>日期</th><th class="num">PV</th><th class="num">UV</th><th class="num">慢请求</th><th class="num">4xx</th><th class="num">5xx</th><th class="num">嗅探</th><th>状态</th></tr></thead>
         <tbody></tbody>
       </table>
     </div>
@@ -131,6 +131,7 @@
         var e4 = rows.map(function (r) { return r.ok ? r.client4xx : null; });
         var e5 = rows.map(function (r) { return r.ok ? r.error5xx : null; });
         var p = rows.map(function (r) { return r.ok ? r.probeHits : null; });
+        var slow = rows.map(function (r) { return r.ok ? r.slowCount : null; });
         trendChart = new Chart(document.getElementById("trend-chart"), {
           type: "line",
           data: {
@@ -138,6 +139,7 @@
             datasets: [
               { label: "PV", data: pv, borderColor: "rgba(0,144,179,.95)", backgroundColor: "rgba(0,144,179,.15)", tension: .25 },
               { label: "UV", data: uv, borderColor: "rgba(16,185,129,.95)", backgroundColor: "rgba(16,185,129,.12)", tension: .25 },
+              { label: "慢请求", data: slow, borderColor: "rgba(217,119,6,.95)", backgroundColor: "rgba(217,119,6,.1)", tension: .25 },
               { label: "4xx", data: e4, borderColor: "rgba(245,158,11,.95)", backgroundColor: "rgba(245,158,11,.12)", tension: .25 },
               { label: "5xx", data: e5, borderColor: "rgba(239,68,68,.95)", backgroundColor: "rgba(239,68,68,.12)", tension: .25 },
               { label: "嗅探命中", data: p, borderColor: "rgba(168,85,247,.95)", backgroundColor: "rgba(168,85,247,.12)", tension: .25 }
@@ -175,10 +177,10 @@
         rows.forEach(function (r) {
           var tr = document.createElement("tr");
           var status = r.ok ? "已加载" : "未加载到";
-          [r.date, r.ok ? r.pv : "—", r.ok ? r.uv : "—", r.ok ? r.client4xx : "—", r.ok ? r.error5xx : "—", r.ok ? r.probeHits : "—", status].forEach(function (col, idx) {
+          [r.date, r.ok ? r.pv : "—", r.ok ? r.uv : "—", r.ok ? r.slowCount : "—", r.ok ? r.client4xx : "—", r.ok ? r.error5xx : "—", r.ok ? r.probeHits : "—", status].forEach(function (col, idx) {
             var td = document.createElement("td");
             td.textContent = String(col);
-            if (idx > 0 && idx < 6) td.className = "num";
+            if (idx > 0 && idx < 7) td.className = "num";
             tr.appendChild(td);
           });
           tb.appendChild(tr);
@@ -214,7 +216,8 @@
               uv: Number(merged.uv || 0),
               client4xx: Number(merged.client4xx || 0),
               error5xx: Number(merged.error5xx || 0),
-              probeHits: Number(merged.probeHits || 0)
+              probeHits: Number(merged.probeHits || 0),
+              slowCount: Number((merged.slow && merged.slow.slowCount) || 0)
             };
           });
           renderSummary(rows);

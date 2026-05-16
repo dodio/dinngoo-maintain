@@ -132,6 +132,20 @@ function getHost(entry) {
  * 静态资源路径：Top 路径表排除（仅路径段，不含 query）。
  * 含常见扩展名、Next 静态目录、部分固定文件名。
  */
+/** Caddy JSON access log：duration / latency，单位一般为秒（浮点） */
+function getDurationSec(entry) {
+  let v = null;
+  if (typeof entry.duration === "number" && !Number.isNaN(entry.duration)) {
+    v = entry.duration;
+  } else if (typeof entry.latency === "number" && !Number.isNaN(entry.latency)) {
+    v = entry.latency;
+  }
+  if (v == null || v < 0) return null;
+  // 极少数非标准日志可能为毫秒
+  if (v > 600) v = v / 1000;
+  return v;
+}
+
 function isStaticAssetPath(path) {
   if (!path || typeof path !== "string") return false;
   const p = path.trim().toLowerCase();
@@ -305,6 +319,18 @@ function aggregateStream(name) {
   /** @type {Array<{ tsMs: number, host: string, method: string, uri: string, status: number, duration: number | null, clientIp: string, msg: string }>} */
   const anomalyBuffer = [];
 
+  const SLOW_THRESHOLD_SEC = Number(process.env.REPORT_SLOW_THRESHOLD_SEC || 3);
+  const SLOW_MAX_COLLECT = Number(process.env.REPORT_SLOW_MAX_COLLECT || 8000);
+  const SLOW_MAX_ROWS = Number(process.env.REPORT_SLOW_MAX_ROWS || 60);
+  const slowByPath = makeCounter();
+  /** @type {Array<{ tsMs: number, host: string, method: string, uri: string, status: number, durationSec: number, clientIp: string }>} */
+  const slowBuffer = [];
+  let durationKnown = 0;
+  let durationSumSec = 0;
+  let slowCount = 0;
+  /** @type {{ lt1: number, s1_3: number, s3_10: number, gte10: number }} */
+  const durationBuckets = { lt1: 0, s1_3: 0, s3_10: 0, gte10: 0 };
+
   const MAX_COLLECT = Number(process.env.REPORT_ANOMALY_MAX_COLLECT || 12000);
   const MAX_OUT = Number(process.env.REPORT_ANOMALY_MAX_ROWS || 350);
   const ABNORMAL_TOP_PATHS = Number(process.env.REPORT_ABNORMAL_TOP_PATHS || 25);
@@ -336,15 +362,39 @@ function aggregateStream(name) {
         }
       }
 
+      const durationSec = getDurationSec(entry);
+      if (durationSec != null) {
+        durationKnown++;
+        durationSumSec += durationSec;
+        if (durationSec < 1) durationBuckets.lt1++;
+        else if (durationSec < 3) durationBuckets.s1_3++;
+        else if (durationSec < 10) durationBuckets.s3_10++;
+        else durationBuckets.gte10++;
+
+        if (durationSec >= SLOW_THRESHOLD_SEC) {
+          slowCount++;
+          if (!isStaticAssetPath(pathOnly)) slowByPath.add(pathOnly);
+          if (slowBuffer.length < SLOW_MAX_COLLECT) {
+            slowBuffer.push({
+              tsMs,
+              host: getHost(entry),
+              method: getMethod(entry),
+              uri: uri.slice(0, 2048),
+              status: st,
+              durationSec,
+              clientIp: ip,
+            });
+          }
+        }
+      }
+
       if (
         (st >= 400 || st < 200 || st === 0) &&
         anomalyBuffer.length < MAX_COLLECT
       ) {
         if (!abnormalPathByStatus[st]) abnormalPathByStatus[st] = makeCounter();
         abnormalPathByStatus[st].add(pathOnly);
-        let duration = null;
-        if (typeof entry.duration === "number") duration = entry.duration;
-        else if (typeof entry.latency === "number") duration = entry.latency;
+        const duration = durationSec;
         anomalyBuffer.push({
           tsMs,
           host: getHost(entry),
@@ -381,6 +431,11 @@ function aggregateStream(name) {
         })
         .slice(0, MAX_OUT);
 
+      const slowRowsSorted = slowBuffer
+        .slice()
+        .sort((a, b) => b.durationSec - a.durationSec || b.tsMs - a.tsMs)
+        .slice(0, SLOW_MAX_ROWS);
+
       return {
         name,
         total: n,
@@ -397,6 +452,17 @@ function aggregateStream(name) {
         probeByPath: probeByPath.entries,
         abnormalTopPaths,
         anomalyRowsSorted,
+        slow: {
+          thresholdSec: SLOW_THRESHOLD_SEC,
+          withDuration: durationKnown,
+          withoutDuration: Math.max(0, n - durationKnown),
+          slowCount,
+          slowRate: durationKnown ? slowCount / durationKnown : 0,
+          avgDurationSec: durationKnown ? durationSumSec / durationKnown : null,
+          durationBuckets,
+          topSlowPaths: Object.fromEntries(topN(slowByPath.entries, 25)),
+          slowRowsSorted,
+        },
       };
     },
   };
@@ -542,10 +608,12 @@ async function main() {
     hostOrder,
     sshAuth: auth,
     dockerLogSnippets,
+    slowThresholdSec: Number(process.env.REPORT_SLOW_THRESHOLD_SEC || 3),
     notes: [
       "HTTP 统计来自 Caddy JSON；顶栏「统计范围」可切换到单个 Host，卡片与图表按该域名过滤。",
       "PV = 访问日志条数（当日该范围内）；UV = 去重客户端 IP（无法识别时为 unknown）。",
-      "Top 路径已排除静态资源（js/css/图片/字体、/_next/static/ 等）；非正常状态路径仍含静态以便排查。",
+      "请求耗时取自 Caddy JSON 的 duration（秒，整请求含反代 upstream）；慢请求阈值见 slowThresholdSec / .env 的 REPORT_SLOW_THRESHOLD_SEC。",
+      "Top 路径已排除静态资源（js/css/图片/字体、/_next/static/ 等）；慢请求 Top 路径同样排除静态；非正常状态路径仍含静态以便排查。",
       "非正常状态码路径来自访问日志（≥400 或小于 200）；明细表为抽样行，非全量。",
       "Caddy 访问日志通常不含 PHP/Node 堆栈；需在 .env 开启 REPORT_ATTACH_DOCKER_LOGS=1 并配置 REPORT_DOCKER_LOG_SERVICES 才附录 docker logs 摘录。",
       "嗅探路径为 URI 子串启发式规则，与脚本内 PROBE 列表一致。",

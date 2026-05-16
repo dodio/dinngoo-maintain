@@ -6,7 +6,7 @@
   <title>运维日报查看器</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" crossorigin="anonymous"></script>
   <style>
-    :root { --ocean:#0090b3; --bg:#e6f7fa; --txt:#1f2937; --muted:#6b7280; --err:#ef4444; --warn:#f59e0b; --ok:#10b981; }
+    :root { --ocean:#0090b3; --bg:#e6f7fa; --txt:#1f2937; --muted:#6b7280; --err:#ef4444; --warn:#f59e0b; --ok:#10b981; --sticky-top:0; }
     * { box-sizing: border-box; }
     body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif; background: var(--bg); color: var(--txt); }
     .wrap { max-width: 1100px; margin: 0 auto; padding: 24px 16px 48px; }
@@ -21,20 +21,28 @@
     .banner { margin-bottom: 12px; padding: 10px 12px; border: 1px solid #e5e7eb; border-radius: 10px; background: #fff; }
     .banner.err { background: #fff5f5; color: #991b1b; border-color: #fecaca; }
     .hide { display: none !important; }
+    .tab-bar-wrap { position: sticky; top: var(--sticky-top); z-index: 200; margin: 0 -16px 16px; padding: 0 16px 8px; background: linear-gradient(var(--bg) 85%, transparent); }
+    .tab-bar { display: flex; flex-wrap: wrap; gap: 8px; padding: 10px; background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; box-shadow: 0 4px 16px rgba(0, 144, 179, 0.1); }
+    .tab-bar button { padding: 8px 14px; border: 1px solid #e5e7eb; border-radius: 8px; background: #f9fafb; color: #374151; font-size: 14px; cursor: pointer; }
+    .tab-bar button.active { background: var(--ocean); border-color: var(--ocean); color: #fff; font-weight: 600; }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
     .grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
     .stat-card { padding: 14px 16px; }
     .stat-card h3 { margin: 0 0 8px; font-size: 12px; letter-spacing: .05em; color: #007599; text-transform: uppercase; }
     .stat { font-size: 22px; font-weight: 700; }
     .err { color: var(--err); } .warn { color: var(--warn); } .ok { color: var(--ok); }
     section { margin-top: 22px; }
-    h2 { margin: 0 0 10px; color: #002e42; }
-    .notes { color: var(--muted); font-size: 13px; }
+    section:first-child { margin-top: 0; }
+    h2 { margin: 0 0 10px; color: #002e42; font-size: 18px; }
+    .notes { color: var(--muted); font-size: 13px; margin: 0 0 10px; }
     .charts { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
     .chart-box { height: 300px; padding: 12px; }
+    .chart-box-sm { height: 220px; padding: 12px; }
     table { width: 100%; border-collapse: collapse; font-size: 13px; }
     th, td { padding: 8px 10px; border-bottom: 1px solid #e5e7eb; text-align: left; vertical-align: top; }
     th { background: #f9fafb; color: #374151; }
-    td.num { text-align: right; }
+    td.num { text-align: right; font-variant-numeric: tabular-nums; }
     td.uri { word-break: break-all; font-family: ui-monospace, monospace; }
     pre.sample { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 10px; padding: 10px; white-space: pre-wrap; word-break: break-word; font-size: 12px; }
   </style>
@@ -53,7 +61,6 @@
       <input id="report-date-input" type="date" />
       <button id="btn-load-date" type="button">查看该日</button>
       <a class="link-btn" href="daily-report-stats.html">打开统计页</a>
-      <span class="notes">没加载到对应 JSON 时会提示。</span>
     </div>
 
     <div class="card toolbar">
@@ -63,85 +70,112 @@
     </div>
 
     <div id="report-content" class="hide">
-      <section>
-        <h2>各域名 PV / UV</h2>
-        <div class="card" style="padding:0;overflow:hidden;">
-          <table id="tbl-host-pv-uv"><thead><tr><th>域名</th><th class="num">PV</th><th class="num">UV</th></tr></thead><tbody></tbody></table>
-        </div>
-      </section>
+      <div class="tab-bar-wrap">
+        <nav class="tab-bar" id="report-tabs" aria-label="日报模块">
+          <button type="button" data-tab="overview" class="active">概览</button>
+          <button type="button" data-tab="slow">慢请求</button>
+          <button type="button" data-tab="access">路径与异常</button>
+          <button type="button" data-tab="security">SSH 与说明</button>
+        </nav>
+      </div>
 
-      <div class="grid" id="summary-cards"></div>
+      <div id="panel-overview" class="tab-panel active">
+        <section>
+          <h2>各域名 PV / UV</h2>
+          <div class="card" style="padding:0;overflow:hidden;">
+            <table id="tbl-host-pv-uv"><thead><tr><th>域名</th><th class="num">PV</th><th class="num">UV</th></tr></thead><tbody></tbody></table>
+          </div>
+        </section>
+        <div class="grid" id="summary-cards"></div>
+        <section>
+          <h2>HTTP 状态分布</h2>
+          <div class="charts">
+            <div class="card chart-box"><canvas id="chart-status"></canvas></div>
+            <div class="card chart-box"><canvas id="chart-class"></canvas></div>
+          </div>
+        </section>
+      </div>
 
-      <section>
-        <h2>HTTP 状态分布（当前范围）</h2>
-        <div class="charts">
-          <div class="card chart-box"><canvas id="chart-status"></canvas></div>
-          <div class="card chart-box"><canvas id="chart-class"></canvas></div>
-        </div>
-      </section>
+      <div id="panel-slow" class="tab-panel">
+        <p class="notes" id="slow-note"></p>
+        <div class="grid" id="slow-summary-cards"></div>
+        <section>
+          <h2>耗时分布（有 duration 的请求）</h2>
+          <div class="card chart-box-sm"><canvas id="chart-duration-buckets"></canvas></div>
+        </section>
+        <section>
+          <h2>慢请求路径 Top</h2>
+          <div class="card" style="padding:0;overflow:hidden;">
+            <table id="tbl-slow-paths"><thead><tr><th>路径</th><th class="num">慢请求次数</th></tr></thead><tbody></tbody></table>
+          </div>
+        </section>
+        <section>
+          <h2>最慢请求 Top（按耗时降序）</h2>
+          <div class="card" style="padding:0;overflow:hidden;">
+            <table id="tbl-slow-rows"><thead><tr><th>时间</th><th>Host</th><th>方法</th><th class="uri">URI</th><th class="num">状态</th><th class="num">耗时</th><th>客户端 IP</th></tr></thead><tbody></tbody></table>
+          </div>
+        </section>
+      </div>
 
-      <section>
-        <h2>非正常 HTTP 状态路径 Top（当前范围）</h2>
-        <div class="card" style="padding:0;overflow:hidden;">
-          <table id="tbl-abnormal-paths"><thead><tr><th>状态码</th><th>路径</th><th class="num">次数</th></tr></thead><tbody></tbody></table>
-        </div>
-      </section>
+      <div id="panel-access" class="tab-panel">
+        <section>
+          <h2>非正常 HTTP 状态路径 Top</h2>
+          <div class="card" style="padding:0;overflow:hidden;">
+            <table id="tbl-abnormal-paths"><thead><tr><th>状态码</th><th>路径</th><th class="num">次数</th></tr></thead><tbody></tbody></table>
+          </div>
+        </section>
+        <section>
+          <h2>Top 路径</h2>
+          <p class="notes">已排除静态资源。</p>
+          <div class="card" style="padding:0;overflow:hidden;">
+            <table id="tbl-paths"><thead><tr><th>路径</th><th class="num">次数</th></tr></thead><tbody></tbody></table>
+          </div>
+        </section>
+        <section>
+          <h2>404 来源 IP</h2>
+          <div class="card" style="padding:0;overflow:hidden;">
+            <table id="tbl-404ip"><thead><tr><th>IP</th><th class="num">404 次数</th></tr></thead><tbody></tbody></table>
+          </div>
+        </section>
+        <section>
+          <h2>启发式嗅探命中</h2>
+          <div class="card" style="padding:0;overflow:hidden;">
+            <table id="tbl-probe"><thead><tr><th>子串</th><th class="num">命中</th></tr></thead><tbody></tbody></table>
+          </div>
+        </section>
+        <section>
+          <h2>异常请求明细（抽样）</h2>
+          <div class="card" style="padding:0;overflow:hidden;">
+            <table id="tbl-access-anomalies"><thead><tr><th>时间</th><th>Host</th><th>方法</th><th class="uri">URI</th><th class="num">状态</th><th>耗时</th><th>客户端 IP</th><th>备注</th></tr></thead><tbody></tbody></table>
+          </div>
+        </section>
+      </div>
 
-      <section>
-        <h2>Top 路径（当前范围）</h2>
-        <div class="card" style="padding:0;overflow:hidden;">
-          <table id="tbl-paths"><thead><tr><th>路径</th><th class="num">次数</th></tr></thead><tbody></tbody></table>
-        </div>
-      </section>
-
-      <section>
-        <h2>404 来源 IP（当前范围）</h2>
-        <div class="card" style="padding:0;overflow:hidden;">
-          <table id="tbl-404ip"><thead><tr><th>IP</th><th class="num">404 次数</th></tr></thead><tbody></tbody></table>
-        </div>
-      </section>
-
-      <section>
-        <h2>异常请求明细（抽样）</h2>
-        <div class="card" style="padding:0;overflow:hidden;">
-          <table id="tbl-access-anomalies"><thead><tr><th>时间</th><th>Host</th><th>方法</th><th class="uri">URI</th><th class="num">状态</th><th>客户端 IP</th><th>备注</th></tr></thead><tbody></tbody></table>
-        </div>
-      </section>
-
-      <section>
-        <h2>SSH 认证日志摘要</h2>
-        <div id="ssh-block"></div>
-      </section>
-
-      <section>
-        <h2>说明</h2>
-        <ul class="notes" id="notes-ul"></ul>
-        <p class="notes" id="footer-meta"></p>
-      </section>
+      <div id="panel-security" class="tab-panel">
+        <section>
+          <h2>SSH 认证日志摘要</h2>
+          <div id="ssh-block"></div>
+        </section>
+        <section>
+          <h2>说明</h2>
+          <ul class="notes" id="notes-ul"></ul>
+          <p class="notes" id="footer-meta"></p>
+        </section>
+      </div>
     </div>
   </div>
 
   <script>
     (function () {
       var report = null;
+      var durationChart = null;
 
       function isValidYmd(ymd) {
         var m = String(ymd || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
         if (!m) return false;
-        var y = Number(m[1]);
-        var mo = Number(m[2]);
-        var day = Number(m[3]);
+        var y = Number(m[1]), mo = Number(m[2]), day = Number(m[3]);
         var d = new Date(y, mo - 1, day, 0, 0, 0, 0);
-        return (
-          !isNaN(d.getTime()) &&
-          d.getFullYear() === y &&
-          d.getMonth() === mo - 1 &&
-          d.getDate() === day
-        );
-      }
-      function ymdToday() {
-        var d = new Date();
-        return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+        return !isNaN(d.getTime()) && d.getFullYear() === y && d.getMonth() === mo - 1 && d.getDate() === day;
       }
       function ymdYesterday() {
         var d = new Date();
@@ -164,9 +198,18 @@
         b.classList.toggle("err", !!isErr);
       }
       function pct(v) { return (v * 100).toFixed(2) + "%"; }
-
+      function formatDurationSec(sec) {
+        if (sec == null || sec !== sec) return "—";
+        if (sec < 60) return (sec * 1000).toFixed(0) + " ms";
+        return sec.toFixed(2) + " s";
+      }
       function emptySnap() {
-        return { total: 0, pv: 0, uv: 0, error5xx: 0, error5xxRate: 0, client4xx: 0, client4xxRate: 0, byStatus: {}, topPaths: {}, top404Ips: {}, abnormalTopPaths: {}, anomalyRowsSorted: [] };
+        return {
+          total: 0, pv: 0, uv: 0, error5xx: 0, error5xxRate: 0, client4xx: 0, client4xxRate: 0,
+          byStatus: {}, topPaths: {}, top404Ips: {}, probeHits: 0, probeByPath: {},
+          abnormalTopPaths: {}, anomalyRowsSorted: [],
+          slow: { thresholdSec: 3, withDuration: 0, withoutDuration: 0, slowCount: 0, slowRate: 0, avgDurationSec: null, durationBuckets: {}, topSlowPaths: {}, slowRowsSorted: [] }
+        };
       }
       function currentSnap() {
         if (!report) return emptySnap();
@@ -177,6 +220,7 @@
       }
       function fillTable(id, rows) {
         var tb = document.querySelector("#" + id + " tbody");
+        if (!tb) return;
         tb.innerHTML = "";
         rows.forEach(function (row) {
           var tr = document.createElement("tr");
@@ -190,22 +234,18 @@
         });
       }
       function fillHostPvUvTable() {
-        var rows = [];
-        var merged = report.merged || {};
-        rows.push(["∗ 合计（www + op）", Number(merged.pv != null ? merged.pv : merged.total || 0), Number(merged.uv || 0)]);
-        (report.hostOrder || []).forEach(function (host) {
-          var s = (report.perHost && report.perHost[host]) || {};
-          rows.push([host, Number(s.pv != null ? s.pv : s.total || 0), Number(s.uv || 0)]);
-        });
         var tb = document.querySelector("#tbl-host-pv-uv tbody");
         tb.innerHTML = "";
-        rows.forEach(function (r) {
-          var tr = document.createElement("tr");
-          var td0 = document.createElement("td"); td0.textContent = r[0];
-          var td1 = document.createElement("td"); td1.textContent = r[1].toLocaleString(); td1.className = "num";
-          var td2 = document.createElement("td"); td2.textContent = r[2].toLocaleString(); td2.className = "num";
-          tr.appendChild(td0); tr.appendChild(td1); tr.appendChild(td2); tb.appendChild(tr);
-        });
+        var merged = report.merged || {};
+        [[ "∗ 合计（www + op）", merged ], ].concat((report.hostOrder || []).map(function (h) { return [h, (report.perHost && report.perHost[h]) || {}]; }))
+          .forEach(function (pair) {
+            var tr = document.createElement("tr");
+            var s = pair[1];
+            var td0 = document.createElement("td"); td0.textContent = pair[0];
+            var td1 = document.createElement("td"); td1.textContent = Number(s.pv != null ? s.pv : s.total || 0).toLocaleString(); td1.className = "num";
+            var td2 = document.createElement("td"); td2.textContent = Number(s.uv || 0).toLocaleString(); td2.className = "num";
+            tr.appendChild(td0); tr.appendChild(td1); tr.appendChild(td2); tb.appendChild(tr);
+          });
       }
       function fillAbnormalPaths(m) {
         var rows = [];
@@ -220,11 +260,27 @@
         (m.anomalyRowsSorted || []).forEach(function (r) {
           var tr = document.createElement("tr");
           var when = r.tsMs ? new Date(r.tsMs).toLocaleString("zh-CN", { hour12: false, timeZone: report.timezoneHint || undefined }) : "—";
-          [when, r.host || "", r.method || "—", r.uri || "", r.status, r.clientIp || "", r.msg || ""].forEach(function (col, idx) {
+          [when, r.host || "", r.method || "—", r.uri || "", r.status, formatDurationSec(r.duration), r.clientIp || "", r.msg || ""].forEach(function (col, idx) {
             var td = document.createElement("td");
             td.textContent = String(col);
             if (idx === 3) td.className = "uri";
-            if (idx === 4) td.className = "num";
+            if (idx === 4 || idx === 5) td.className = "num";
+            tr.appendChild(td);
+          });
+          tb.appendChild(tr);
+        });
+      }
+      function fillSlowRows(m) {
+        var tb = document.querySelector("#tbl-slow-rows tbody");
+        tb.innerHTML = "";
+        (m.slow && m.slow.slowRowsSorted || []).forEach(function (r) {
+          var tr = document.createElement("tr");
+          var when = r.tsMs ? new Date(r.tsMs).toLocaleString("zh-CN", { hour12: false, timeZone: report.timezoneHint || undefined }) : "—";
+          [when, r.host || "", r.method || "—", r.uri || "", r.status, formatDurationSec(r.durationSec), r.clientIp || ""].forEach(function (col, idx) {
+            var td = document.createElement("td");
+            td.textContent = String(col);
+            if (idx === 3) td.className = "uri";
+            if (idx === 4 || idx === 5) td.className = "num";
             tr.appendChild(td);
           });
           tb.appendChild(tr);
@@ -235,52 +291,86 @@
           var ch = window.Chart && Chart.getChart && Chart.getChart(document.getElementById(id));
           if (ch) ch.destroy();
         });
+        if (durationChart) { durationChart.destroy(); durationChart = null; }
       }
       function renderCharts(m) {
         destroyCharts();
         var byStatus = m.byStatus || {};
         var labels = Object.keys(byStatus).sort(function (a, b) { return Number(a) - Number(b); });
         var values = labels.map(function (k) { return byStatus[k]; });
-        if (!window.Chart || !labels.length) return;
-        new Chart(document.getElementById("chart-status"), {
-          type: "bar",
-          data: { labels: labels, datasets: [{ data: values, label: "请求数", backgroundColor: "rgba(0, 144, 179, 0.65)", borderRadius: 8 }] },
-          options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
-        });
-        var ok = 0, c4 = 0, c5 = 0;
-        labels.forEach(function (code, i) {
-          var n = Number(code), c = Number(values[i] || 0);
-          if (n >= 500) c5 += c; else if (n >= 400) c4 += c; else ok += c;
-        });
-        new Chart(document.getElementById("chart-class"), {
-          type: "doughnut",
-          data: { labels: ["2xx/3xx", "4xx", "5xx"], datasets: [{ data: [ok, c4, c5], backgroundColor: ["rgba(16,185,129,.75)", "rgba(245,158,11,.75)", "rgba(239,68,68,.75)"] }] },
-          options: { responsive: true, maintainAspectRatio: false }
-        });
+        if (window.Chart && labels.length) {
+          new Chart(document.getElementById("chart-status"), {
+            type: "bar",
+            data: { labels: labels, datasets: [{ data: values, label: "请求数", backgroundColor: "rgba(0, 144, 179, 0.65)", borderRadius: 8 }] },
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
+          });
+          var ok = 0, c4 = 0, c5 = 0;
+          labels.forEach(function (code, i) {
+            var n = Number(code), c = Number(values[i] || 0);
+            if (n >= 500) c5 += c; else if (n >= 400) c4 += c; else ok += c;
+          });
+          new Chart(document.getElementById("chart-class"), {
+            type: "doughnut",
+            data: { labels: ["2xx/3xx", "4xx", "5xx"], datasets: [{ data: [ok, c4, c5], backgroundColor: ["rgba(16,185,129,.75)", "rgba(245,158,11,.75)", "rgba(239,68,68,.75)"] }] },
+            options: { responsive: true, maintainAspectRatio: false }
+          });
+        }
+        var slow = m.slow || {};
+        var b = slow.durationBuckets || {};
+        var bLabels = ["< 1s", "1–3s", "3–10s", "≥ 10s"];
+        var bValues = [b.lt1 || 0, b.s1_3 || 0, b.s3_10 || 0, b.gte10 || 0];
+        if (window.Chart && (bValues[0] + bValues[1] + bValues[2] + bValues[3]) > 0) {
+          durationChart = new Chart(document.getElementById("chart-duration-buckets"), {
+            type: "bar",
+            data: { labels: bLabels, datasets: [{ label: "请求数", data: bValues, backgroundColor: "rgba(0, 153, 157, 0.7)", borderRadius: 6 }] },
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
+          });
+        }
+      }
+      function addStatCard(container, title, value, cls) {
+        var el = document.createElement("div");
+        el.className = "card stat-card";
+        el.innerHTML = "<h3>" + title + "</h3><div class='stat " + (cls || "") + "'>" + value + "</div>";
+        container.appendChild(el);
       }
       function renderSummary(m) {
         var cards = document.getElementById("summary-cards");
         cards.innerHTML = "";
-        function add(title, value, cls) {
-          var el = document.createElement("div");
-          el.className = "card stat-card";
-          el.innerHTML = "<h3>" + title + "</h3><div class='stat " + (cls || "") + "'>" + value + "</div>";
-          cards.appendChild(el);
+        addStatCard(cards, "PV", (Number(m.pv != null ? m.pv : m.total || 0)).toLocaleString());
+        addStatCard(cards, "UV", (Number(m.uv || 0)).toLocaleString());
+        addStatCard(cards, "5xx / 占比", (m.error5xx || 0) + " / " + pct(m.error5xxRate || 0), m.error5xx ? "err" : "ok");
+        addStatCard(cards, "4xx / 占比", (m.client4xx || 0) + " / " + pct(m.client4xxRate || 0), m.client4xx ? "warn" : "ok");
+        var slow = m.slow || {};
+        if (slow.withDuration) {
+          addStatCard(cards, "慢请求（≥" + (slow.thresholdSec || report.slowThresholdSec || 3) + "s）", (slow.slowCount || 0).toLocaleString() + " / " + pct(slow.slowRate || 0), slow.slowCount ? "warn" : "ok");
         }
-        add("PV", (Number(m.pv != null ? m.pv : m.total || 0)).toLocaleString());
-        add("UV", (Number(m.uv || 0)).toLocaleString());
-        add("5xx 次数 / 占比", (m.error5xx || 0) + " / " + pct(m.error5xxRate || 0), m.error5xx ? "err" : "ok");
-        add("4xx 次数 / 占比", (m.client4xx || 0) + " / " + pct(m.client4xxRate || 0), m.client4xx ? "warn" : "ok");
+      }
+      function renderSlow(m) {
+        var slow = m.slow || {};
+        var th = slow.thresholdSec != null ? slow.thresholdSec : (report.slowThresholdSec || 3);
+        document.getElementById("slow-note").textContent =
+          "慢请求阈值 ≥ " + th + " 秒（Caddy JSON duration，整请求含反代）。有耗时字段 " +
+          (slow.withDuration || 0).toLocaleString() + " 条，无 duration " + (slow.withoutDuration || 0).toLocaleString() + " 条。";
+        var cards = document.getElementById("slow-summary-cards");
+        cards.innerHTML = "";
+        addStatCard(cards, "慢请求数", (slow.slowCount || 0).toLocaleString(), slow.slowCount ? "warn" : "");
+        addStatCard(cards, "慢请求占比", pct(slow.slowRate || 0), slow.slowCount ? "warn" : "");
+        addStatCard(cards, "平均耗时", slow.avgDurationSec != null ? formatDurationSec(slow.avgDurationSec) : "—");
+        addStatCard(cards, "有 duration 的请求", (slow.withDuration || 0).toLocaleString());
+        fillTable("tbl-slow-paths", Object.entries(slow.topSlowPaths || {}));
+        fillSlowRows(m);
       }
       function renderScope() {
         var sel = document.getElementById("scope-host").value;
         var m = currentSnap();
         document.getElementById("scope-current-label").textContent = sel === "__merged__" ? "全部合并（www + op）" : sel;
         renderSummary(m);
+        renderSlow(m);
         renderCharts(m);
         fillAbnormalPaths(m);
         fillTable("tbl-paths", Object.entries(m.topPaths || {}));
         fillTable("tbl-404ip", Object.entries(m.top404Ips || {}));
+        fillTable("tbl-probe", Object.entries(m.probeByPath || {}));
         fillAnomalies(m);
       }
       function renderStaticBlocks() {
@@ -304,7 +394,9 @@
           li.textContent = n;
           ul.appendChild(li);
         });
-        document.getElementById("footer-meta").textContent = "生成时间（UTC）：" + (report.generatedAt || "") + " · 时区提示：" + (report.timezoneHint || "") + " · 解析错误行数：" + (((report.lineStats || {}).parseErrors) || 0);
+        document.getElementById("footer-meta").textContent =
+          "生成时间（UTC）：" + (report.generatedAt || "") + " · 时区：" + (report.timezoneHint || "") +
+          " · 解析错误行：" + (((report.lineStats || {}).parseErrors) || 0);
       }
       function resetScope() {
         var sel = document.getElementById("scope-host");
@@ -323,7 +415,17 @@
         sel.disabled = false;
         sel.value = "__merged__";
       }
-
+      function initTabs() {
+        var tabs = document.getElementById("report-tabs");
+        var panels = document.querySelectorAll(".tab-panel");
+        tabs.addEventListener("click", function (e) {
+          var btn = e.target.closest("button[data-tab]");
+          if (!btn) return;
+          var id = btn.getAttribute("data-tab");
+          tabs.querySelectorAll("button").forEach(function (b) { b.classList.toggle("active", b === btn); });
+          panels.forEach(function (p) { p.classList.toggle("active", p.id === "panel-" + id); });
+        });
+      }
       function showNoData(ymd, extra) {
         report = null;
         document.getElementById("report-content").classList.add("hide");
@@ -331,21 +433,18 @@
         document.getElementById("report-date-label").textContent = ymd;
         banner("没加载到 " + ymd + " 的日报 JSON（" + (extra || "请确认该日期文件是否已生成") + "）", true);
       }
-
       function fetchDailyReport(ymd) {
-        var file = "daily-" + ymd + ".json";
-        return fetch(file + "?t=" + Date.now(), { cache: "no-store" }).then(function (r) {
+        return fetch("daily-" + ymd + ".json?t=" + Date.now(), { cache: "no-store" }).then(function (r) {
           if (!r.ok) throw new Error("HTTP " + r.status);
           return r.json();
         });
       }
-
       function loadForDate(ymd) {
         if (!isValidYmd(ymd)) return;
         document.getElementById("report-date-input").value = ymd;
         document.getElementById("report-date-label").textContent = ymd;
         setUrlDate(ymd);
-        banner("正在加载 " + ymd + " 的日报 JSON…", false);
+        banner("正在加载 " + ymd + "…", false);
         fetchDailyReport(ymd).then(function (data) {
           report = data || {};
           fillHostPvUvTable();
@@ -353,27 +452,23 @@
           renderStaticBlocks();
           renderScope();
           document.getElementById("report-content").classList.remove("hide");
-          banner("已加载 " + ymd + "（" + "daily-" + ymd + ".json）", false);
+          banner("已加载 daily-" + ymd + ".json", false);
         }).catch(function (e) {
           showNoData(ymd, String((e && e.message) || "加载失败"));
         });
       }
 
-      document.getElementById("scope-host").addEventListener("change", function () {
-        if (report) renderScope();
-      });
+      document.getElementById("scope-host").addEventListener("change", function () { if (report) renderScope(); });
       document.getElementById("btn-load-date").addEventListener("click", function () {
         var ymd = document.getElementById("report-date-input").value;
-        if (!isValidYmd(ymd)) {
-          banner("日期格式不正确，请选择有效日期。", true);
-          return;
-        }
+        if (!isValidYmd(ymd)) { banner("日期格式不正确。", true); return; }
         loadForDate(ymd);
       });
       document.getElementById("report-date-input").addEventListener("keydown", function (e) {
         if (e.key === "Enter") document.getElementById("btn-load-date").click();
       });
 
+      initTabs();
       loadForDate(getDateFromUrl());
     })();
   </script>

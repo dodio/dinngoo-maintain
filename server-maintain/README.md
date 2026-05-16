@@ -30,7 +30,7 @@ Caddy 日志按**大小**滚动即可；日报脚本根据每行 JSON 的 **`ts`
 
 浏览页面说明：
 
-- `daily-report.html`：默认读取今天日期，也可通过 `?date=YYYY-MM-DD` 指定，或用页面日期控件切换；会请求同目录 `daily-YYYY-MM-DD.json`，未找到会提示「没加载到」。
+- `daily-report.html`：默认读取**昨天**日期，也可通过 `?date=YYYY-MM-DD` 指定；分 Tab（sticky）切换概览 / 慢请求 / 路径与异常 / SSH；慢请求来自 Caddy JSON 的 `duration`（秒），阈值见 `REPORT_SLOW_THRESHOLD_SEC`（默认 3）。
 - `daily-report-stats.html`：默认统计最近 7 天，也支持自定义日期范围；按天请求 `daily-YYYY-MM-DD.json` 并绘制 PV/UV/4xx/5xx/嗅探命中趋势折线图。
 
 ## Docker 容器日志
