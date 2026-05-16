@@ -27,6 +27,7 @@ www.example.com {
 			roll_local_time
 		}
 		format json
+		# JSON 行内已有 duration（秒，整请求含反代上游）；慢请求排查见该字段
 	}
 
 	# nextjs compose: 127.0.0.1:13000:3000
@@ -47,6 +48,7 @@ op.example.com {
 			roll_local_time
 		}
 		format json
+		# JSON 行内已有 duration（秒，含反代到 Nginx/PHP 的全链路）
 	}
 
 	# 1) query token 校验通过：发 cookie，并去参重定向（仅当前 OP_GATE_TOKEN；轮换后不保留旧 token）
