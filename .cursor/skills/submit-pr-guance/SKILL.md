@@ -119,6 +119,7 @@ supports/.cursor/skills/submit-pr-guance/scripts/create-review-task.sh \
 
 ## 注意
 
+- PR 正文临时文件写到 `$TMPDIR`（如 `mktemp`），**不要落在仓库里**；提交后删除。
 - Guance **不是** GitHub PR；不自动 push。是否 `git push` 由用户另行决定。
 - Token 写在 skill 内仅供本机开发；生产环境应改用环境变量。
 - `scope`、`tags` 按用户当次指令填写；`code-review` 为审阅任务默认标签。
