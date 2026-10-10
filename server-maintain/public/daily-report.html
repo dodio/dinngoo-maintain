@@ -434,7 +434,7 @@
         banner("没加载到 " + ymd + " 的日报 JSON（" + (extra || "请确认该日期文件是否已生成") + "）", true);
       }
       function fetchDailyReport(ymd) {
-        return fetch("daily-" + ymd + ".json?t=" + Date.now(), { cache: "no-store" }).then(function (r) {
+        return fetch("data/daily-" + ymd + ".json?t=" + Date.now(), { cache: "no-store" }).then(function (r) {
           if (!r.ok) throw new Error("HTTP " + r.status);
           return r.json();
         });
@@ -452,7 +452,7 @@
           renderStaticBlocks();
           renderScope();
           document.getElementById("report-content").classList.remove("hide");
-          banner("已加载 daily-" + ymd + ".json", false);
+          banner("已加载 data/daily-" + ymd + ".json", false);
         }).catch(function (e) {
           showNoData(ymd, String((e && e.message) || "加载失败"));
         });

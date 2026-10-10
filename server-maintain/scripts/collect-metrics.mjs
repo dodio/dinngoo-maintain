@@ -5,6 +5,7 @@ import {
   renameSync,
   existsSync,
   statSync,
+  mkdirSync,
 } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -166,14 +167,16 @@ function latestBackup(dir, globPat) {
 
 function main() {
   const reportDir = process.env.REPORT_DIR || "";
+  // 统一输出到 $REPORT_DIR/data/，避免静态站根目录堆积文件
   const metricsPath =
     process.env.METRICS_JSON_PATH ||
-    (reportDir ? join(reportDir, "metrics.json") : "");
+    (reportDir ? join(reportDir, "data", "metrics.json") : "");
 
   if (!metricsPath) {
     console.error("请设置 METRICS_JSON_PATH 或 REPORT_DIR");
     process.exit(1);
   }
+  mkdirSync(dirname(metricsPath), { recursive: true });
 
   const backupDir = process.env.BACKUP_DIR || "";
   const backupGlob = process.env.BACKUP_GLOB || "*.sql.gz";

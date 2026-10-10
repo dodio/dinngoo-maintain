@@ -64,7 +64,7 @@
       </table>
     </div>
 
-    <p class="notes">说明：统计基于每日 `daily-YYYY-MM-DD.json` 的 `merged` 数据。缺失日期不会中断，会在表格中标注“未加载到”。</p>
+    <p class="notes">说明：统计基于 `data/daily-YYYY-MM-DD.json` 的 `merged` 数据（PV/UV 已排除 Next 静态资源与预取/RSC 请求）。缺失日期不会中断，会在表格中标注“未加载到”。</p>
   </div>
 
   <script>
@@ -113,7 +113,7 @@
         document.getElementById("end-date").value = ymd(end);
       }
       function fetchOne(dateStr) {
-        var file = "daily-" + dateStr + ".json";
+        var file = "data/daily-" + dateStr + ".json";
         return fetch(file + "?t=" + Date.now(), { cache: "no-store" }).then(function (r) {
           if (!r.ok) throw new Error("HTTP " + r.status);
           return r.json();

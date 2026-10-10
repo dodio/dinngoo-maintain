@@ -6,7 +6,7 @@
 
 - Node.js **≥ 18**
 - 日报与指标脚本需在能读 **`/var/log/caddy/`**、写 **`REPORT_DIR`** 的用户下运行（常为 root 或 `adm` 组成员）。
-- Caddy 站点 **`maint.dinngoo.xyz`**（测试环境运维仪表盘）的 `MAINT_STATIC_ROOT` 与本目录的 **`REPORT_DIR` 相同**；其它环境请与对应 `maint.*` 子域一致。首次把 [`public/dashboard.html`](./public/dashboard.html)、[`public/daily-report.html`](./public/daily-report.html)、[`public/daily-report-stats.html`](./public/daily-report-stats.html) 拷到该目录（与 `metrics.json`、`daily-YYYY-MM-DD.json` 同目录，便于相对路径拉取）。
+- Caddy 站点 **`maint.dinngoo.xyz`**（测试环境运维仪表盘）的 `MAINT_STATIC_ROOT` 与本目录的 **`REPORT_DIR` 相同**；其它环境请与对应 `maint.*` 子域一致。首次把 [`public/dashboard.html`](./public/dashboard.html)、[`public/daily-report.html`](./public/daily-report.html)、[`public/daily-report-stats.html`](./public/daily-report-stats.html) 拷到该目录根，**生成的数据 JSON 统一落在该目录下的 `data/` 子目录**（避免根目录堆积按日文件），页面按相对路径 `data/...` 拉取。
 
 ```bash
 cp public/dashboard.html "$REPORT_DIR/"
@@ -30,8 +30,24 @@ Caddy 日志按**大小**滚动即可；日报脚本根据每行 JSON 的 **`ts`
 
 浏览页面说明：
 
-- `daily-report.html`：默认读取**昨天**日期，也可通过 `?date=YYYY-MM-DD` 指定；分 Tab（sticky）切换概览 / 慢请求 / 路径与异常 / SSH；慢请求来自 Caddy JSON 的 `duration`（秒），阈值见 `REPORT_SLOW_THRESHOLD_SEC`（默认 3）。
-- `daily-report-stats.html`：默认统计最近 7 天，也支持自定义日期范围；按天请求 `daily-YYYY-MM-DD.json` 并绘制 PV/UV/4xx/5xx/嗅探命中趋势折线图。
+- `daily-report.html`：默认读取**昨天**日期，也可通过 `?date=YYYY-MM-DD` 指定；分 Tab（sticky）切换概览 / 慢请求 / 路径与异常 / SSH；慢请求来自 Caddy JSON 的 `duration`（秒），阈值见 `REPORT_SLOW_THRESHOLD_SEC`（默认 3）。读取 `data/daily-YYYY-MM-DD.json`。
+- `daily-report-stats.html`：默认统计最近 7 天，也支持自定义日期范围；按天请求 `data/daily-YYYY-MM-DD.json` 并绘制 PV/UV/4xx/5xx/嗅探命中趋势折线图。
+
+## PV / UV 口径（噪声过滤）
+
+`merged.pv` / `perHost[*].pv` **只统计「非噪声」请求**，噪声不计入 PV/UV，其明细在 `excluded.byReason`：
+
+| 原因 | 说明 |
+|------|------|
+| `nextAsset` | `/_next/*`：JS/CSS chunk、`/_next/image` 图片优化等 |
+| `rsc` | App Router 的 RSC 载荷：URI 带 `?_rsc=`，或请求头 `RSC: 1` |
+| `prefetch` | 链接预取：请求头 `Next-Router-Prefetch: 1` |
+| `staticFile` | 常见静态扩展名（js/css/图片/字体/音视频/pdf/zip 等） |
+| `meta` | `/favicon.ico`、`/robots.txt`、`/sitemap.xml`、`/manifest.json` |
+
+- 同时保留对比字段：`totalRequests`（原始日志条数）与 `uvAll`（未过滤的去重 IP 数）。
+- **Top 路径**同样只统计非噪声请求；**状态码与错误明细仍统计全部请求**（便于发现资源 404），慢请求统计也不过滤（RSC 是真实的 SSR 渲染）。
+- 实测参考：生产 `www` 日志中 `?_rsc=` 约占 48%、静态扩展名约占 23%、`/_next/*` 约占 5%，过滤前 PV 会虚高约 3 倍。
 
 ## Docker 容器日志
 
@@ -39,7 +55,7 @@ Caddy 日志按**大小**滚动即可；日报脚本根据每行 JSON 的 **`ts`
 
 - **按日筛选 + 关键词粗扫**：[`scripts/analyze-docker-logs.mjs`](./scripts/analyze-docker-logs.mjs)（`npm run docker-logs`）  
   - 推荐配置 **`DOCKER_LOG_CONTAINERS`** 为 `docker ps --format '{{.Names}}'` 中的名字（逗号分隔）。  
-  - 脚本用 `docker logs --since YYYY-MM-DDT00:00:00 --until 次日T00:00:00` 取当日行，再对每行做：尝试解析**内层 JSON**（应用打 JSON 时）否则当纯文本；按内置 + `DOCKER_LOG_KEYWORDS` 做**子串命中**统计，并可写入 **`$REPORT_DIR/docker-log-scan-YYYY-MM-DD.json`**。  
+  - 脚本用 `docker logs --since YYYY-MM-DDT00:00:00 --until 次日T00:00:00` 取当日行，再对每行做：尝试解析**内层 JSON**（应用打 JSON 时）否则当纯文本；按内置 + `DOCKER_LOG_KEYWORDS` 做**子串命中**统计，并可写入 **`$REPORT_DIR/data/docker-log-scan-YYYY-MM-DD.json`**。  
   - 若需直接扫磁盘上的 json-file，可设 **`DOCKER_JSON_LOG_GLOB`**（路径含一个 `*`）。
 
 - **若改用 syslog**：需在宿主机自行配置 rsyslog 等接收 `/dev/log`（或 Docker 配置的 `syslog-address`），仓库不提供现成片段。
@@ -50,8 +66,8 @@ HTTP 访问量仍以 **Caddy JSON 访问日志**为主；本脚本侧重**容器
 
 | 脚本 | 说明 |
 |------|------|
-| `npm run report` | 生成 `daily-YYYY-MM-DD.json` 到 `REPORT_DIR`。默认统计「昨天」；`--date YYYY-MM-DD` 或 `REPORT_DATE` 覆盖。 |
-| `npm run metrics` | 写入 `METRICS_JSON_PATH`（默认 `$REPORT_DIR/metrics.json`），供 `dashboard.html` 轮询；含内存、**Linux Swap**（`/proc/meminfo`）、磁盘、`docker stats`、最新备份等。 |
+| `npm run report` | 生成 `$REPORT_DIR/data/daily-YYYY-MM-DD.json`。默认统计「昨天」；`--date YYYY-MM-DD` 或 `REPORT_DATE` 覆盖。 |
+| `npm run metrics` | 写入 `METRICS_JSON_PATH`（默认 `$REPORT_DIR/data/metrics.json`），供 `dashboard.html` 轮询；含内存、**Linux Swap**（`/proc/meminfo`）、磁盘、`docker stats`、最新备份等。 |
 | `bash scripts/mysql-full-backup.sh` | 全量 `mysqldump \| gzip` 到 `BACKUP_DIR`，并按 `BACKUP_KEEP_DAYS` 清理。 |
 | `npm run docker-logs` | 按日筛选 Docker 日志并关键词统计；见上文「Docker 容器日志」。 |
 | `python3 scripts/sync-mysql-password-from-db-env.py` | **在 Caddy/备份所在宿主机上**运行：从 `/srv/dinngoo-room/mysql/.env`（可用 `DINNGOO_DB_ENV` 覆盖）读取 **`MYSQL_USER` / `MYSQL_PASSWORD`** 写入本目录 **`.env`**（不打印密码）。首次部署或改过库口令后可再跑一次。2026-10-10 前该脚本名为 `sync-mysql-password-from-php-server.py`，随 PHP 下线改名换源。 |

@@ -8,7 +8,7 @@
 
 import { execSync } from "node:child_process";
 import { createReadStream } from "node:fs";
-import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { createInterface } from "node:readline";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -168,6 +168,55 @@ function isStaticAssetPath(path) {
   );
 }
 
+/** 站点元文件（不算页面访问） */
+const META_PATHS = new Set([
+  "/favicon.ico",
+  "/robots.txt",
+  "/sitemap.xml",
+  "/manifest.json",
+  "/manifest.webmanifest",
+]);
+
+/**
+ * 读取 Caddy JSON 日志中 `request.headers` 的值。
+ * 注意：Caddy 记录的是 Go 的 `http.Header`，值可能是**数组**（如 `Next-Router-Prefetch: ["1"]`），
+ * 键名为规范化形式（如 `Rsc`），因此这里大小写不敏感匹配。
+ */
+function headerValue(entry, name) {
+  const h = entry && entry.request && entry.request.headers;
+  if (!h || typeof h !== "object") return "";
+  const want = String(name).toLowerCase();
+  for (const [k, v] of Object.entries(h)) {
+    if (String(k).toLowerCase() !== want) continue;
+    if (Array.isArray(v)) return String(v[0] ?? "");
+    return String(v ?? "");
+  }
+  return "";
+}
+
+/**
+ * 「噪声请求」判定：这些请求不算页面访问，**不计入 PV / UV**。
+ *
+ * 覆盖：
+ * - `/_next/*`：Next.js 的 JS/CSS chunk、`/_next/image` 图片优化、`/_next/data` 等
+ * - `?_rsc=` 或 `RSC: 1`：App Router 的 RSC 载荷（客户端导航/预取的数据请求）
+ * - `Next-Router-Prefetch: 1`：Next 的链接预取
+ * - 常见静态扩展名（js/css/图片/字体…）与 favicon / robots / sitemap
+ *
+ * 仅影响 PV/UV 与 Top 路径口径；状态码与错误明细仍统计全部请求（便于发现资源 404）。
+ */
+function noiseReasonOf(entry, pathOnly, uri) {
+  const p = String(pathOnly || "/").toLowerCase();
+  const u = String(uri || "");
+  if (p.startsWith("/_next/")) return "nextAsset";
+  if (u.includes("_rsc=")) return "rsc";
+  if (headerValue(entry, "next-router-prefetch").toLowerCase() === "1") return "prefetch";
+  if (headerValue(entry, "rsc").toLowerCase() === "1") return "rsc";
+  if (META_PATHS.has(p)) return "meta";
+  if (isStaticAssetPath(p)) return "staticFile";
+  return null;
+}
+
 async function readLinesMatchingDay(files, startMs, endMs, onEntry) {
   let linesOk = 0;
   let parseErr = 0;
@@ -312,6 +361,13 @@ function aggregateStream(name) {
   let n = 0;
   let n5 = 0;
   let n4 = 0;
+  // PV/UV：排除噪声请求（Next 资源、RSC/预取、静态文件、站点元文件）
+  let pv = 0;
+  let noiseTotal = 0;
+  /** @type {Record<string, number>} */
+  const noiseByReason = {};
+  /** @type {Set<string>} */
+  const cleanIps = new Set();
   let probeHits = 0;
   const probeByPath = makeCounter();
   /** @type {Record<number, ReturnType<typeof makeCounter>>} */
@@ -344,12 +400,21 @@ function aggregateStream(name) {
       const ipKey = String(ip || "unknown").trim() || "unknown";
       uniqueIps.add(ipKey);
       const tsMs = tsToMs(entry.ts) ?? 0;
+      const pathOnly = (uri.split("?")[0] || uri).split("#")[0] || "/";
+      const noise = noiseReasonOf(entry, pathOnly, uri);
+      if (noise) {
+        noiseTotal++;
+        noiseByReason[noise] = (noiseByReason[noise] || 0) + 1;
+      } else {
+        pv++;
+        cleanIps.add(ipKey);
+      }
       byStatus.add(String(st));
       n++;
       if (st >= 500) n5++;
       if (st >= 400 && st < 500) n4++;
-      const pathOnly = (uri.split("?")[0] || uri).split("#")[0] || "/";
-      if (!isStaticAssetPath(pathOnly)) {
+      // Top 路径同样只统计「非噪声」请求，避免被预取/RSC 的重复路径抬高
+      if (!noise) {
         byPath.add(pathOnly);
       }
 
@@ -438,9 +503,14 @@ function aggregateStream(name) {
 
       return {
         name,
-        total: n,
-        pv: n,
-        uv: uniqueIps.size,
+        totalRequests: n,
+        pv,
+        uv: cleanIps.size,
+        uvAll: uniqueIps.size,
+        excluded: {
+          total: noiseTotal,
+          byReason: noiseByReason,
+        },
         error5xx: n5,
         error5xxRate: n ? n5 / n : 0,
         client4xx: n4,
@@ -611,9 +681,12 @@ async function main() {
     slowThresholdSec: Number(process.env.REPORT_SLOW_THRESHOLD_SEC || 3),
     notes: [
       "HTTP 统计来自 Caddy JSON；顶栏「统计范围」可切换到单个 Host，卡片与图表按该域名过滤。",
-      "PV = 访问日志条数（当日该范围内）；UV = 去重客户端 IP（无法识别时为 unknown）。",
+      "PV = 当日该范围内**排除噪声后的页面请求数**；UV = 去重客户端 IP（无法识别时为 unknown）。噪声见 excluded 字段。",
+      "噪声（不计入 PV/UV）：Next.js 的 /_next/*（chunk、/_next/image 等）、RSC 载荷（?_rsc= 或 RSC: 1 头）、链接预取（Next-Router-Prefetch: 1）、常见静态扩展名、favicon/robots/sitemap。",
+      "totalRequests = 原始日志条数（含噪声）；uvAll = 未过滤的去重 IP 数，便于与 uv 对比。",
       "请求耗时取自 Caddy JSON 的 duration（秒，整请求含反代 upstream）；慢请求阈值见 slowThresholdSec / .env 的 REPORT_SLOW_THRESHOLD_SEC。",
       "Top 路径已排除静态资源（js/css/图片/字体、/_next/static/ 等）；慢请求 Top 路径同样排除静态；非正常状态路径仍含静态以便排查。",
+      "状态码与错误明细仍统计**全部**请求（含静态与预取），便于发现资源 404；仅 PV/UV 与 Top 路径做噪声过滤。",
       "非正常状态码路径来自访问日志（≥400 或小于 200）；明细表为抽样行，非全量。",
       "Caddy 访问日志通常不含 PHP/Node 堆栈；需在 .env 开启 REPORT_ATTACH_DOCKER_LOGS=1 并配置 REPORT_DOCKER_LOG_SERVICES 才附录 docker logs 摘录。",
       "嗅探路径为 URI 子串启发式规则，与脚本内 PROBE 列表一致。",
@@ -622,7 +695,10 @@ async function main() {
 
   const base = process.env.REPORT_BASENAME || "daily";
   const outName = `${base}-${ymd}.json`;
-  const outPath = join(reportDir, outName);
+  // 统一输出到 $REPORT_DIR/data/，避免静态站根目录堆积大量按日文件
+  const dataDir = join(reportDir, "data");
+  if (!existsSync(dataDir)) mkdirSync(dataDir, { recursive: true });
+  const outPath = join(dataDir, outName);
   writeFileSync(outPath, JSON.stringify(data, null, 2) + "\n", "utf8");
   console.log("已写入", outPath);
 }

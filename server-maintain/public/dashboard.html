@@ -82,7 +82,7 @@
   <div class="wrap">
     <header>
       <h1>服务器实时指标</h1>
-      <div class="sub">与 <code>metrics.json</code> 同源轮询；由宿主机定时任务写入 JSON。</div>
+      <div class="sub">与 <code>data/metrics.json</code> 同源轮询；由宿主机定时任务写入 JSON。</div>
     </header>
 
     <div class="banner" id="status-line">正在拉取…</div>
@@ -265,7 +265,7 @@
       }
 
       function tick() {
-        fetch('metrics.json?t=' + Date.now(), { cache: 'no-store' })
+        fetch('data/metrics.json?t=' + Date.now(), { cache: 'no-store' })
           .then(function (r) { return r.json(); })
           .then(function (m) {
             var localUpdated = m.tsLocale;
@@ -299,7 +299,7 @@
           })
           .catch(function () {
             document.getElementById('status-line').innerHTML =
-              '<span class="err">拉取 metrics.json 失败（路径或权限？）</span>';
+              '<span class="err">拉取 data/metrics.json 失败（路径或权限？）</span>';
           });
       }
 

@@ -11,7 +11,7 @@
  */
 
 import { createReadStream } from "node:fs";
-import { existsSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { createInterface } from "node:readline";
 import { spawn } from "node:child_process";
 import { dirname, join } from "node:path";
@@ -325,7 +325,9 @@ async function main() {
 
   const reportDir = process.env.REPORT_DIR || "";
   if (reportDir && existsSync(reportDir)) {
-    const outPath = join(reportDir, `docker-log-scan-${ymd}.json`);
+    const dataDir = join(reportDir, "data");
+    mkdirSync(dataDir, { recursive: true });
+    const outPath = join(dataDir, `docker-log-scan-${ymd}.json`);
     writeFileSync(outPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
     console.log("已写入", outPath);
   }
