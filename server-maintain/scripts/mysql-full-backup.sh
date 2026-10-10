@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # 全量 MySQL 备份 + gzip；清理旧文件。
 # 方式 A：宿主机有 mysqldump，连 MYSQL_HOST（通常为 127.0.0.1）
-# 方式 B：宿主机无客户端时设 MYSQLDUMP_COMPOSE_FILE=php-server 的 compose 文件路径，
+# 方式 B：宿主机无客户端时设 MYSQLDUMP_COMPOSE_FILE=独立 MySQL 栈的 compose 文件路径
+#         （/srv/dinngoo-room/mysql/docker-compose.prod.yml），
 #         经 docker compose exec 在 mysql 容器内执行 mysqldump。
 # 用法: source .env（含 MYSQL_USER / MYSQL_PASSWORD / MYSQL_DATABASE）后再执行本脚本。
 set -euo pipefail

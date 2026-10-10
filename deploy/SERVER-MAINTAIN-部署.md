@@ -27,7 +27,7 @@ cd dinngoo-maintain/server-maintain
 ```bash
 cp env.example .env
 # 编辑 .env。若使用 dinngoo-rotate-gate-tokens --write，请保留 CADDY_ENV_FILE=/etc/caddy/env.deploy（与 Caddy systemd 一致）。
-# 可选：python3 scripts/sync-mysql-password-from-php-server.py
+# 可选：python3 scripts/sync-mysql-password-from-db-env.py   # 从 /srv/dinngoo-room/mysql/.env 同步库口令
 ```
 
 ## 3. sudo 包装 + 免密（无需参数）
@@ -64,7 +64,7 @@ sudo bash deploy/install-dinngoo-maintain-cron.sh
 
 说明与手动 crontab 片段见 **`server-maintain/README.md`**。
 
-**整站 Docker（php-server 三服务 + dinngoo-site Next）** 在宿主依次启动：
+**整站 Docker（dinngoo-db MySQL + dinngoo-site + dinngoo-admin）** 在宿主依次启动：
 
 ```bash
 cd /srv/dinngoo-room/dinngoo-maintain

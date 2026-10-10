@@ -299,7 +299,7 @@ async function main() {
       "请设置 DOCKER_LOG_CONTAINERS（逗号分隔容器名）或 DOCKER_JSON_LOG_GLOB，或使用参数 --containers / --json-glob",
     );
     console.error(
-      "示例: DOCKER_LOG_CONTAINERS=php-server-nginx-1,php-server-php-1 node scripts/analyze-docker-logs.mjs --date 2026-05-07",
+      "示例: DOCKER_LOG_CONTAINERS=dinngoo-db-mysql-1,dinngoo-site-next-1,dinngoo-admin-next-1 node scripts/analyze-docker-logs.mjs --date 2026-10-10",
     );
     process.exit(1);
   }

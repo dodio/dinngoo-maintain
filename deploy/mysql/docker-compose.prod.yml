@@ -1,0 +1,56 @@
+# 独立 MySQL（2026-10-10 从 php-server 栈拆出，PHP 同期下线）
+#
+# - compose 项目名 dinngoo-db，容器名形如 dinngoo-db-mysql-1
+# - 服务名保持 mysql：dinngoo_net 内 dinngoo-site / dinngoo-admin 按服务名直连 3306，无需改 DATABASE_HOST
+# - 数据卷是外部卷 dinngoo-db_mysql_data（由 php-server_mysql_data 复制而来）。
+#   external: true 的含义：卷不存在时 compose 直接报错，避免误起一个空库。
+# - 只对宿主暴露 127.0.0.1:3306
+#
+# 前置：
+#   docker network create dinngoo_net
+#   docker volume create dinngoo-db_mysql_data   # 并按 runbook 从旧卷复制数据
+#
+# 启动：docker compose -f docker-compose.prod.yml up -d
+name: dinngoo-db
+
+services:
+  mysql:
+    platform: linux/amd64
+    image: mysql:5.7
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?在 .env 中设置，参见 env.example}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-room_controll}
+      MYSQL_USER: ${MYSQL_USER:-room}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?在 .env 中设置，参见 env.example}
+    ports:
+      - "127.0.0.1:3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      # 以下三个挂载只在「首次初始化空数据目录」时生效；沿用既有数据卷时不会触发，属保留引导能力
+      - ./seed:/seed:ro
+      - ./init:/docker-entrypoint-initdb.d:ro
+      - ./migrations:/docker-migrations:ro
+    networks:
+      - dinngoo_net
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p\"$$MYSQL_ROOT_PASSWORD\" || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 60
+      start_period: 120s
+
+networks:
+  dinngoo_net:
+    external: true
+    name: dinngoo_net
+
+volumes:
+  mysql_data:
+    external: true
+    name: dinngoo-db_mysql_data

@@ -37,7 +37,7 @@ www.example.com {
 	}
 }
 
-# 后台（反代层门禁）
+# 后台（新后台 Next.js dinngoo-admin，反代层门禁）
 op.example.com {
 	import secure_headers
 
@@ -49,7 +49,7 @@ op.example.com {
 			roll_local_time
 		}
 		format json
-		# 默认 JSON 每行含 duration（秒，浮点）：整请求耗时（含反代 Nginx/PHP 全链路）
+		# 默认 JSON 每行含 duration（秒，浮点）：整请求耗时（含反代上游全链路）
 	}
 
 	# 1) query token 校验通过：发 cookie，并去参重定向（仅当前 OP_GATE_TOKEN；轮换后不保留旧 token）
@@ -67,8 +67,8 @@ op.example.com {
 	`
 	handle @gate_by_cookie {
 		header Set-Cookie "admin_gate={$OP_GATE_TOKEN}; Max-Age=2592000; Path=/; HttpOnly; Secure; SameSite=Lax"
-		# php-server compose: 127.0.0.1:18080:80
-		reverse_proxy 127.0.0.1:18080 {
+		# dinngoo-admin compose: 127.0.0.1:13010:3000
+		reverse_proxy 127.0.0.1:13010 {
 			header_down -X-Powered-By
 		}
 	}

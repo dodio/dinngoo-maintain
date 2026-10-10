@@ -54,7 +54,7 @@ HTTP 访问量仍以 **Caddy JSON 访问日志**为主；本脚本侧重**容器
 | `npm run metrics` | 写入 `METRICS_JSON_PATH`（默认 `$REPORT_DIR/metrics.json`），供 `dashboard.html` 轮询；含内存、**Linux Swap**（`/proc/meminfo`）、磁盘、`docker stats`、最新备份等。 |
 | `bash scripts/mysql-full-backup.sh` | 全量 `mysqldump \| gzip` 到 `BACKUP_DIR`，并按 `BACKUP_KEEP_DAYS` 清理。 |
 | `npm run docker-logs` | 按日筛选 Docker 日志并关键词统计；见上文「Docker 容器日志」。 |
-| `python3 scripts/sync-mysql-password-from-php-server.py` | **在 Caddy/备份所在宿主机上**运行：从 `/srv/dinngoo-room/php-server/.env` 读取 **`MYSQL_PASSWORD`** 写入本目录 **`.env`**（不打印密码）。首次部署或改过 php-server 口令后可再跑一次。 |
+| `python3 scripts/sync-mysql-password-from-db-env.py` | **在 Caddy/备份所在宿主机上**运行：从 `/srv/dinngoo-room/mysql/.env`（可用 `DINNGOO_DB_ENV` 覆盖）读取 **`MYSQL_USER` / `MYSQL_PASSWORD`** 写入本目录 **`.env`**（不打印密码）。首次部署或改过库口令后可再跑一次。2026-10-10 前该脚本名为 `sync-mysql-password-from-php-server.py`，随 PHP 下线改名换源。 |
 | `bash scripts/rotate-gate-tokens.sh` | 等同 `sudo dinngoo-rotate-gate-tokens`（需先执行 [`deploy/install-dinngoo-server-maintain-wrappers.sh`](../deploy/install-dinngoo-server-maintain-wrappers.sh)） |
 | `dinngoo-fetch-caddy-gate-tokens` | 查看 `EnvironmentFile` 中 `MAINT_*` / `OP_*`（安装包装后免密） |
 | **`sudo dinngoo-caddy-apply`** | 若存在 **`deploy/staging/Caddyfile`**：校验后安装到 **`/etc/caddy/Caddyfile`** 再 reload；否则仅校验当前 Caddyfile 并 reload（如仅轮换 env）。**不**提交暂存文件到 Git |
